@@ -3,11 +3,13 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"MinioApi/service"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
+	"gopkg.in/gographics/imagick.v3/imagick"
 )
 
 type IHandler interface{
@@ -31,6 +33,10 @@ func Handler(client *minio.Client) IHandler{
 func (h handler) GetImage(c *fiber.Ctx) error{
 	ctx := context.Background()
 
+	imagick.Initialize()
+	defer imagick.Terminate()
+	var err error
+
 	bucket := c.Params("bucket")
 	objectName := c.Params("*")
 
@@ -43,7 +49,6 @@ func (h handler) GetImage(c *fiber.Ctx) error{
 	}
 
 	return c.SendStream(object)
-
 }
 
 func (h handler) GetImageWidthHeight(c *fiber.Ctx) error{
@@ -54,14 +59,6 @@ func (h handler) GetImageWidthHeight(c *fiber.Ctx) error{
 	height := c.Params("height")
 	objectName := c.Params("*")
 
-	fmt.Println(bucket, width, height, objectName)
-	return c.JSON(fiber.Map{
-		"bucket": bucket,
-		"width": width,
-		"height": height,
-		"objectName": objectName,
-	})
-
 	found, _ := h.minioClient.BucketExists(ctx, bucket)
 
 	object, err := h.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
@@ -70,7 +67,17 @@ func (h handler) GetImageWidthHeight(c *fiber.Ctx) error{
 		return c.SendFile("./notfound.png")
 	}
 
-	return c.SendStream(object)
+	hWidth, err := strconv.ParseUint(width, 10, 16)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	hHeight, err := strconv.ParseUint(height, 10, 16)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	return c.Send(service.ImagickResize(service.StreamToByte(object), uint(hWidth), uint(hHeight)))
 }
 
 func (h handler) GetImageWidth(c *fiber.Ctx) error{

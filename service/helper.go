@@ -1,7 +1,9 @@
 package service
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"time"
@@ -21,4 +23,10 @@ func RandomName(length int) string{
 	b := make([]byte, length)
 	rand.Read(b)
 	return fmt.Sprintf("%x", b)[:length]
+}
+
+func StreamToByte(stream io.Reader) []byte{
+	buf := new(bytes.Buffer)
+	_, _ = buf.ReadFrom(stream)
+	return buf.Bytes()
 }

@@ -32,5 +32,6 @@ require (
 	golang.org/x/net v0.0.0-20220111093109-d55c255bac03 // indirect
 	golang.org/x/sys v0.0.0-20220111092808-5a964db01320 // indirect
 	golang.org/x/text v0.3.7 // indirect
+	gopkg.in/gographics/imagick.v3 v3.4.0 // indirect
 	gopkg.in/ini.v1 v1.57.0 // indirect
 )
