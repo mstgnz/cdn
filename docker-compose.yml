@@ -1,6 +1,17 @@
 version: "3.9"
 
 services:
+  golang:
+    build: .
+    container_name: cdn-golang
+    restart: always
+    ports:
+      - "9090:9090"
+    depends_on:
+      - minio
+    networks:
+      - gominio-cdn-api
+
   minio:
     image: minio/minio
     container_name: cdn-minio
@@ -14,15 +25,6 @@ services:
       MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
     command: server --console-address ":9001" /var/lib/minio
-    networks:
-      - gominio-cdn-api
-
-  golang:
-    build: .
-    container_name: cdn-golang
-    restart: always
-    ports:
-      - "9090:9090"
     networks:
       - gominio-cdn-api
 
