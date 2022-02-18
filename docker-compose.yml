@@ -10,7 +10,7 @@ services:
     working_dir: /go/projects/imagick
     volumes:
       - ./:/go/projects/imagick
-    command: sh -c "go build -o MinioApi && ./MinioApi -b 0.0.0.0:9090 --timeout 120"
+    command: sh -c "go build -o MinioApi && ./MinioApi"
     depends_on:
       - minio
     networks:
