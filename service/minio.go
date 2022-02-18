@@ -12,8 +12,12 @@ func MinioClient() *minio.Client{
 
 	EnvLoad()
 
-	minioClient, err := minio.New(os.Getenv("MINIO_ENDPOINT"), &minio.Options{
-		Creds:  credentials.NewStaticV4(os.Getenv("MINIO_ROOT_USER"), os.Getenv("MINIO_ROOT_PASSWORD"), ""),
+	endpoint := os.Getenv("MINIO_ENDPOINT")
+	accessKey := os.Getenv("MINIO_ROOT_USER")
+	secretKey := os.Getenv("MINIO_ROOT_PASSWORD")
+
+	minioClient, err := minio.New(endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
 		Secure: false,
 	})
 	if err != nil {
