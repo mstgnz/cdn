@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+
 	"MinioApi/controller"
 	"MinioApi/service"
 	"github.com/gofiber/fiber/v2"
@@ -22,7 +24,7 @@ func main(){
 
 	app.Post("/upload", handler.UploadImage)
 
-	_ = app.Listen(":9090")
+	log.Fatal(app.Listen(":9090"))
 
 }
 

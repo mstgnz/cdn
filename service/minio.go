@@ -20,5 +20,7 @@ func MinioClient() *minio.Client{
 		log.Fatalln(err)
 	}
 
+	log.Printf("%#v\n", minioClient)
+
 	return minioClient
 }
