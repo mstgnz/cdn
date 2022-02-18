@@ -8,7 +8,7 @@ RUN apt-get update \
         wget build-essential \
         pkg-config \
         --no-install-recommends \
-    && apt-get -q -y install \
+    && apt-get -q -y install vim \
         libjpeg-dev \
         libpng-dev \
         libtiff-dev \
