@@ -42,3 +42,6 @@ RUN cd && \
 WORKDIR /go/projects/imagick
 COPY . .
 RUN go install
+RUN go build
+EXPOSE 9090
+CMD ["/go/projects/imagick/MinioApi"]

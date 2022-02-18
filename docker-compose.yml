@@ -18,11 +18,11 @@ services:
       - gominio-cdn-api
 
   golang:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: cdn-golang
     restart: always
+    ports:
+      - "9090:9090"
     networks:
       - gominio-cdn-api
 
