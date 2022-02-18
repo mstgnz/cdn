@@ -7,6 +7,10 @@ services:
     restart: always
     ports:
       - "9090:9090"
+    working_dir: /go/projects/imagick
+    volumes:
+      - ./:/go/projects/imagick
+    command: sh -c "go build -o MinioApi && ./MinioApi -b 0.0.0.0:9090 --timeout 120"
     depends_on:
       - minio
     networks:
