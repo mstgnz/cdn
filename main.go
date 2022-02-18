@@ -6,8 +6,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// https://docs.min.io/docs/golang-client-api-reference.html
-
 var (
 	minioClient = service.MinioClient()
 	handler = controller.Handler(minioClient)
