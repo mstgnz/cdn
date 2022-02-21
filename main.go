@@ -6,16 +6,20 @@ import (
 	"MinioApi/controller"
 	"MinioApi/service"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/favicon"
 )
 
 var (
 	minioClient = service.MinioClient()
-	handler = controller.Handler(minioClient)
+	handler     = controller.Image(minioClient)
 )
 
-func main(){
+func main() {
 
 	app := fiber.New()
+	app.Use(favicon.New(favicon.Config{
+		File: "./favicon.png",
+	}))
 
 	app.Get("/:bucket/w::width/h::height/*", handler.GetImageWidthHeight)
 	app.Get("/:bucket/w::width/*", handler.GetImageWidth)
@@ -27,4 +31,3 @@ func main(){
 	log.Fatal(app.Listen(":9090"))
 
 }
-
