@@ -3,16 +3,16 @@ package controller
 import (
 	"context"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 
 	"MinioApi/service"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
-	"gopkg.in/gographics/imagick.v3/imagick"
 )
 
-type IHandler interface{
+type IImage interface {
 	GetImage(c *fiber.Ctx) error
 	GetImageWidth(c *fiber.Ctx) error
 	GetImageHeight(c *fiber.Ctx) error
@@ -20,38 +20,38 @@ type IHandler interface{
 	UploadImage(c *fiber.Ctx) error
 }
 
-type handler struct{
+type image struct {
 	minioClient minio.Client
 }
 
-func Handler(client *minio.Client) IHandler{
-	return &handler{
+func Image(client *minio.Client) IImage {
+	return &image{
 		minioClient: *client,
 	}
 }
 
-func (h handler) GetImage(c *fiber.Ctx) error{
+func (i image) GetImage(c *fiber.Ctx) error {
 	ctx := context.Background()
-
-	imagick.Initialize()
-	defer imagick.Terminate()
-	var err error
 
 	bucket := c.Params("bucket")
 	objectName := c.Params("*")
 
-	found, _ := h.minioClient.BucketExists(ctx, bucket)
+	found, _ := i.minioClient.BucketExists(ctx, bucket)
 
-	object, err := h.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
+	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 
 	if !found || err != nil {
 		return c.SendFile("./notfound.png")
 	}
 
-	return c.SendStream(object)
+	getByte := service.StreamToByte(object)
+	if len(getByte) == 0{
+		return c.Send(service.ImageToByte("./notfound.png"))
+	}
+	return c.Send(getByte)
 }
 
-func (h handler) GetImageWidthHeight(c *fiber.Ctx) error{
+func (i image) GetImageWidthHeight(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	bucket := c.Params("bucket")
@@ -59,52 +59,53 @@ func (h handler) GetImageWidthHeight(c *fiber.Ctx) error{
 	height := c.Params("height")
 	objectName := c.Params("*")
 
-	found, _ := h.minioClient.BucketExists(ctx, bucket)
+	found, _ := i.minioClient.BucketExists(ctx, bucket)
 
-	object, err := h.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
-
-	if !found || err != nil {
-		return c.SendFile("./notfound.png")
-	}
+	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 
 	hWidth, err := strconv.ParseUint(width, 10, 16)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 	}
 
 	hHeight, err := strconv.ParseUint(height, 10, 16)
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
+	}
+
+	if !found || err != nil {
+		//return c.SendFile("./notfound.png")
+		return c.Send(service.ImagickResize(service.ImageToByte("./notfound.png"), uint(hWidth), uint(hHeight)))
 	}
 
 	return c.Send(service.ImagickResize(service.StreamToByte(object), uint(hWidth), uint(hHeight)))
 }
 
-func (h handler) GetImageWidth(c *fiber.Ctx) error{
+func (i image) GetImageWidth(c *fiber.Ctx) error {
 	bucket := c.Params("bucket")
 	width := c.Params("width")
 	objectName := c.Params("*")
 
 	return c.JSON(fiber.Map{
-		"bucket": bucket,
-		"width": width,
+		"bucket":     bucket,
+		"width":      width,
 		"objectName": objectName,
 	})
 }
 
-func (h handler) GetImageHeight(c *fiber.Ctx) error{
+func (i image) GetImageHeight(c *fiber.Ctx) error {
 	bucket := c.Params("bucket")
 	height := c.Params("height")
 	objectName := c.Params("*")
 
 	return c.JSON(fiber.Map{
-		"bucket": bucket,
-		"height": height,
+		"bucket":     bucket,
+		"height":     height,
 		"objectName": objectName,
 	})
 }
 
-func (h handler) UploadImage(c *fiber.Ctx) error{
+func (i image) UploadImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	path := c.FormValue("path")
@@ -125,7 +126,7 @@ func (h handler) UploadImage(c *fiber.Ctx) error{
 		})
 	}
 
-	found, _ := h.minioClient.BucketExists(ctx, bucket)
+	found, _ := i.minioClient.BucketExists(ctx, bucket)
 	if !found {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -160,7 +161,7 @@ func (h handler) UploadImage(c *fiber.Ctx) error{
 	fileSize := file.Size
 
 	// Upload with PutObject
-	info, err := h.minioClient.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
+	info, err := i.minioClient.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
