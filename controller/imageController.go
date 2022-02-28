@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -46,7 +47,11 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	}
 
 	getByte := service.StreamToByte(object)
+
+	c.Set("Content-Type", http.DetectContentType(getByte))
+
 	if len(getByte) == 0 {
+		c.Set("Content-Type", "image/png")
 		return c.Send(service.ImageToByte("./notfound.png"))
 	}
 	return c.Send(getByte)
@@ -71,15 +76,19 @@ func (i image) GetImageWidthHeight(c *fiber.Ctx) error {
 	hHeight, hErr := strconv.ParseUint(height, 10, 16)
 
 	if wErr != nil || hErr != nil {
+		c.Set("Content-Type", "image/png")
 		return c.SendFile("./notfound.png")
 	}
 
 	if !found || err != nil {
 		//return c.SendFile("./notfound.png")
+		c.Set("Content-Type", "image/png")
 		return c.Send(service.ImagickResize(service.ImageToByte("./notfound.png"), uint(hWidth), uint(hHeight)))
 	}
 
-	return c.Send(service.ImagickResize(service.StreamToByte(object), uint(hWidth), uint(hHeight)))
+	getByte := service.StreamToByte(object)
+	c.Set("Content-Type", http.DetectContentType(getByte))
+	return c.Send(service.ImagickResize(getByte, uint(hWidth), uint(hHeight)))
 }
 
 func (i image) GetImageWidth(c *fiber.Ctx) error {
