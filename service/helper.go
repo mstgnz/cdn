@@ -43,3 +43,13 @@ func ImageToByte(img string) []byte {
 	buffer := bufio.NewReader(file)
 	return StreamToByte(buffer)
 }
+
+func SetWidthToHeight(width, height string) (string, string){
+	if len(width) > 0 && len(height) == 0 {
+		height = width
+	}
+	if len(height) > 0 && len(width) == 0 {
+		width = height
+	}
+	return width, height
+}

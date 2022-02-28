@@ -7,6 +7,7 @@ import (
 )
 
 // https://github.com/gographics/imagick/tree/master/examples
+// https://pkg.go.dev/gopkg.in/gographics/imagick.v3/imagick
 
 func ImagickResize(image []byte, hWidth, hHeight uint) []byte {
 	imagick.Initialize()

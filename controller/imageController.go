@@ -3,7 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
-	"log"
+	"os"
 	"strconv"
 	"strings"
 
@@ -18,6 +18,7 @@ type IImage interface {
 	GetImageHeight(c *fiber.Ctx) error
 	GetImageWidthHeight(c *fiber.Ctx) error
 	UploadImage(c *fiber.Ctx) error
+	DeleteImage(c *fiber.Ctx) error
 }
 
 type image struct {
@@ -45,7 +46,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	}
 
 	getByte := service.StreamToByte(object)
-	if len(getByte) == 0{
+	if len(getByte) == 0 {
 		return c.Send(service.ImageToByte("./notfound.png"))
 	}
 	return c.Send(getByte)
@@ -59,18 +60,18 @@ func (i image) GetImageWidthHeight(c *fiber.Ctx) error {
 	height := c.Params("height")
 	objectName := c.Params("*")
 
+	width, height = service.SetWidthToHeight(width, height)
+
 	found, _ := i.minioClient.BucketExists(ctx, bucket)
 
 	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 
-	hWidth, err := strconv.ParseUint(width, 10, 16)
-	if err != nil {
-		log.Println(err)
-	}
+	hWidth, wErr := strconv.ParseUint(width, 10, 16)
 
-	hHeight, err := strconv.ParseUint(height, 10, 16)
-	if err != nil {
-		log.Println(err)
+	hHeight, hErr := strconv.ParseUint(height, 10, 16)
+
+	if wErr != nil || hErr != nil {
+		return c.SendFile("./notfound.png")
 	}
 
 	if !found || err != nil {
@@ -82,26 +83,43 @@ func (i image) GetImageWidthHeight(c *fiber.Ctx) error {
 }
 
 func (i image) GetImageWidth(c *fiber.Ctx) error {
-	bucket := c.Params("bucket")
-	width := c.Params("width")
-	objectName := c.Params("*")
-
-	return c.JSON(fiber.Map{
-		"bucket":     bucket,
-		"width":      width,
-		"objectName": objectName,
-	})
+	return i.GetImageWidthHeight(c)
 }
 
 func (i image) GetImageHeight(c *fiber.Ctx) error {
+	return i.GetImageWidthHeight(c)
+}
+
+func (i image) DeleteImage(c *fiber.Ctx) error {
+
+	ctx := context.Background()
+
+	getToken := strings.Split(c.Get("Authorization"), " ")
+
+	if !strings.EqualFold(getToken[1], os.Getenv("TOKEN")) {
+		return c.JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid Token",
+		})
+	}
+
 	bucket := c.Params("bucket")
-	height := c.Params("height")
 	objectName := c.Params("*")
 
+	found, _ := i.minioClient.BucketExists(ctx, bucket)
+
+	err := i.minioClient.RemoveObject(ctx, bucket, objectName, minio.RemoveObjectOptions{})
+
+	if !found || err != nil {
+		return c.JSON(fiber.Map{
+			"error": true,
+			"msg":   "File Not Found",
+		})
+	}
+
 	return c.JSON(fiber.Map{
-		"bucket":     bucket,
-		"height":     height,
-		"objectName": objectName,
+		"error": false,
+		"msg":   "File Successfully Deleted",
 	})
 }
 
@@ -111,6 +129,13 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	path := c.FormValue("path")
 	bucket := c.FormValue("bucket")
 	file, err := c.FormFile("file")
+
+	if file == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "File Not Found!",
+		})
+	}
 
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
