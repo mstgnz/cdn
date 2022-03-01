@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
-	"MinioApi/controller"
-	"MinioApi/service"
+	"GominioCdn/controller"
+	"GominioCdn/service"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
