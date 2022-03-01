@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 
-	"MinioApi/service"
+	"GominioCdn/service"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
 )
@@ -105,7 +104,7 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 
 	getToken := strings.Split(c.Get("Authorization"), " ")
 
-	if !strings.EqualFold(getToken[1], os.Getenv("TOKEN")) {
+	if !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
 		return c.JSON(fiber.Map{
 			"error": true,
 			"msg":   "Invalid Token",

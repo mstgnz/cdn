@@ -1,4 +1,4 @@
-module MinioApi
+module GominioCdn
 
 go 1.17
 
