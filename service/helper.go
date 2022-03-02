@@ -45,7 +45,7 @@ func ImageToByte(img string) []byte {
 	return StreamToByte(buffer)
 }
 
-func SetWidthToHeight(width, height string) (string, string){
+func SetWidthToHeight(width, height string) (string, string) {
 	if len(width) > 0 && len(height) == 0 {
 		height = width
 	}
