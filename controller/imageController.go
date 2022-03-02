@@ -22,12 +22,14 @@ type IImage interface {
 }
 
 type image struct {
-	minioClient minio.Client
+	minioService minio.Client
+	awsService   service.IAwsService
 }
 
-func Image(client *minio.Client) IImage {
+func Image(minioService *minio.Client, awsService service.IAwsService) IImage {
 	return &image{
-		minioClient: *client,
+		minioService: *minioService,
+		awsService:   awsService,
 	}
 }
 
@@ -37,9 +39,9 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	bucket := c.Params("bucket")
 	objectName := c.Params("*")
 
-	found, _ := i.minioClient.BucketExists(ctx, bucket)
+	found, _ := i.minioService.BucketExists(ctx, bucket)
 
-	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
+	object, err := i.minioService.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 
 	if !found || err != nil {
 		return c.SendFile("./notfound.png")
@@ -50,7 +52,6 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	c.Set("Content-Type", http.DetectContentType(getByte))
 
 	if len(getByte) == 0 {
-		c.Set("Content-Type", "image/png")
 		return c.Send(service.ImageToByte("./notfound.png"))
 	}
 	return c.Send(getByte)
@@ -66,27 +67,25 @@ func (i image) GetImageWidthHeight(c *fiber.Ctx) error {
 
 	width, height = service.SetWidthToHeight(width, height)
 
-	found, _ := i.minioClient.BucketExists(ctx, bucket)
+	found, _ := i.minioService.BucketExists(ctx, bucket)
 
-	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
+	object, err := i.minioService.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 
 	hWidth, wErr := strconv.ParseUint(width, 10, 16)
 
 	hHeight, hErr := strconv.ParseUint(height, 10, 16)
 
 	if wErr != nil || hErr != nil {
-		c.Set("Content-Type", "image/png")
 		return c.SendFile("./notfound.png")
 	}
 
 	if !found || err != nil {
 		//return c.SendFile("./notfound.png")
-		c.Set("Content-Type", "image/png")
 		return c.Send(service.ImagickResize(service.ImageToByte("./notfound.png"), uint(hWidth), uint(hHeight)))
 	}
 
 	getByte := service.StreamToByte(object)
-	c.Set("Content-Type", http.DetectContentType(getByte))
+	c.Set("content-type", http.DetectContentType(getByte))
 	return c.Send(service.ImagickResize(getByte, uint(hWidth), uint(hHeight)))
 }
 
@@ -114,9 +113,9 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 	bucket := c.Params("bucket")
 	objectName := c.Params("*")
 
-	found, _ := i.minioClient.BucketExists(ctx, bucket)
+	found, _ := i.minioService.BucketExists(ctx, bucket)
 
-	err := i.minioClient.RemoveObject(ctx, bucket, objectName, minio.RemoveObjectOptions{})
+	err := i.minioService.RemoveObject(ctx, bucket, objectName, minio.RemoveObjectOptions{})
 
 	if !found || err != nil {
 		return c.JSON(fiber.Map{
@@ -159,7 +158,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		})
 	}
 
-	found, _ := i.minioClient.BucketExists(ctx, bucket)
+	found, _ := i.minioService.BucketExists(ctx, bucket)
 	if !found {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -168,7 +167,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	}
 
 	// Get Buffer from file
-	buffer, err := file.Open()
+	fileBuffer, err := file.Open()
 
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -176,7 +175,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
-	defer buffer.Close()
+	defer fileBuffer.Close()
 
 	parseFileName := strings.Split(file.Filename, ".")
 
@@ -189,12 +188,11 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 
 	randomName := service.RandomName(10)
 	objectName := path + "/" + randomName + "." + parseFileName[1]
-	fileBuffer := buffer
 	contentType := file.Header["Content-Type"][0]
 	fileSize := file.Size
 
 	// Upload with PutObject
-	info, err := i.minioClient.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
+	minioResult, err := i.minioService.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
 
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -203,9 +201,22 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		})
 	}
 
+	link := "cdn.destechhasar.com/" + bucket + "/" + objectName
+
+	// Glacier upload
+	awsResult, err := i.awsService.UploadArchive(bucket, service.StreamToByte(fileBuffer))
+
+	awsErr := fmt.Sprintf("Glacier Successfully Uploaded")
+
+	if err != nil {
+		awsErr = fmt.Sprintf("Glacier Failed Uploaded %s", err.Error())
+	}
+
 	return c.JSON(fiber.Map{
-		"error": false,
-		"msg":   fmt.Sprintf("Successfully uploaded %s of size %d", objectName, info.Size),
-		"info":  info,
+		"error":       false,
+		"minioUpload": fmt.Sprintf("Successfully Uploaded %s of size %d", link, minioResult.Size),
+		"minioResult": minioResult,
+		"awsUpload":   awsErr,
+		"awsResult":   awsResult,
 	})
 }
