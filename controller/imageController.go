@@ -209,7 +209,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	awsErr := fmt.Sprintf("S3 Successfully Uploaded")
 
 	if err != nil {
-		awsErr = fmt.Sprintf("Glacier Failed Uploaded %s", err.Error())
+		awsErr = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
 	}
 
 	return c.JSON(fiber.Map{
