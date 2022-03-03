@@ -203,10 +203,10 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 
 	link := "cdn.destechhasar.com/" + bucket + "/" + objectName
 
-	// Glacier upload
-	awsResult, err := i.awsService.UploadArchive(bucket, service.StreamToByte(fileBuffer))
+	// S3 upload with glacier storage class
+	awsResult, err := i.awsService.S3PutObject(bucket, objectName, fileBuffer)
 
-	awsErr := fmt.Sprintf("Glacier Successfully Uploaded")
+	awsErr := fmt.Sprintf("S3 Successfully Uploaded")
 
 	if err != nil {
 		awsErr = fmt.Sprintf("Glacier Failed Uploaded %s", err.Error())
@@ -214,7 +214,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 
 	return c.JSON(fiber.Map{
 		"error":       false,
-		"minioUpload": fmt.Sprintf("Successfully Uploaded %s of size %d", link, minioResult.Size),
+		"minioUpload": fmt.Sprintf("Minio Successfully Uploaded %s of size %d", link, minioResult.Size),
 		"minioResult": minioResult,
 		"awsUpload":   awsErr,
 		"awsResult":   awsResult,
