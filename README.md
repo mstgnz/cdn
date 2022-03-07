@@ -1,6 +1,5 @@
 ## Cdn Api With Go and MinIO
 I am developing cdn api service with golang, minio and docker. We also use it at the company I work for. All processes on Minio will be added as api service over time.
-I am developing cdn api service with golang, minio and docker. We also use it at the company I work for. All processes on Minio will be added as api service over time.
 
 
 ### Image Upload
