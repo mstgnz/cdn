@@ -1,6 +1,18 @@
 ## Cdn Api With Go and MinIO
 I am developing cdn api service with golang, minio and docker. We also use it at the company I work for. All processes on Minio will be added as api service over time.
 
+### Installation
+
+Since the project will run on [docker](https://www.docker.com), you must have docker installed on your computer.
+
+You must change the .env.example file name to .env and enter the required information.
+
+- `git clone https://github.com/mstgnz/go-minio-cdn.git`
+- `docker-compose up -d`
+
+minio -> http://localhost:9000  
+golang -> http://localhost:9090
+
 
 ### Image Upload
 
