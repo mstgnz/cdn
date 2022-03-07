@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Go Minio Cdn Api</title>
+    <meta name="description" content="Go Minio Cdn Api">
+    <meta name="author" content="Mesut GENEZ">
+
+    <style>
+        body {
+            background-color: antiquewhite;
+        }
+
+        .main {
+            width: 50%;
+            margin-left: 25%;
+            padding: 25px;
+            background-color: whitesmoke;
+            border-radius: 25px;
+            margin-top: 3%;
+        }
+
+        .main h2 {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .main img {
+            width: 50%;
+            margin-left: 25%;
+        }
+
+        .main p {
+            text-align: justify;
+        }
+    </style>
+</head>
+
+<body>
+<div class="main">
+    <h2>Go Minio Cdn Api</h2>
+    <p>
+        To upload an image, you must send a post request to <strong>http://localhost:9090/upload</strong>.<br>
+        form-data-keys; bucket, path and file.
+    </p>
+    <p>
+        To take a picture, use the url <strong>http://localhost:9090/bucket-name/object-name</strong>
+    </p>
+    <p>
+        <strong>Note : </strong>An authorization token is required to upload and delete images.
+    </p>
+</div>
+</body>
+
+</html>

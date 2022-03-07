@@ -43,6 +43,11 @@ func main() {
 
 	app.Post("/upload", minioController.UploadImage)
 
+	// Index
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.SendFile("./index.html")
+	})
+
 	log.Fatal(app.Listen(":9090"))
 
 }

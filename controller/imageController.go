@@ -103,7 +103,7 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 
 	getToken := strings.Split(c.Get("Authorization"), " ")
 
-	if !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
 		return c.JSON(fiber.Map{
 			"error": true,
 			"msg":   "Invalid Token",
@@ -132,6 +132,14 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 
 func (i image) UploadImage(c *fiber.Ctx) error {
 	ctx := context.Background()
+
+	getToken := strings.Split(c.Get("Authorization"), " ")
+	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+		return c.JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid Token",
+		})
+	}
 
 	path := c.FormValue("path")
 	bucket := c.FormValue("bucket")
@@ -201,7 +209,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		})
 	}
 
-	link := "cdn.destechhasar.com/" + bucket + "/" + objectName
+	link := "localhost:9090/" + bucket + "/" + objectName
 
 	// S3 upload with glacier storage class
 	awsResult, err := i.awsService.S3PutObject(bucket, objectName, fileBuffer)
