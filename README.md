@@ -5,9 +5,11 @@ I am developing cdn api service with golang, minio and docker. We also use it at
 
 ### Image Upload
 
-POST: http://localhost:9090/upload
+POST: http://localhost:9090/upload  
+DELETE: http://localhost:9090/bucket-name/object-name  
+WIDTH: Authorization (env.example)
 
-NOTE: Every file is uploaded to the glacier and the minio. Since we use minio on our server, we back up our files uploaded on minio with glacier.
+NOTE: Every file is uploaded to the s3 glacier (StorageClassGlacier) and the minio. Since we used minio on our server, we back up our files uploaded on minio with s3 glacier.
 
 | KEY    | VALUE       |
 |--------|-------------|
@@ -62,7 +64,7 @@ GET IMAGE WIDTH HEIGHT : http://localhost:9090/bucketname/h:300/object-name
 ### Image Delete
 
 DELETE: http://localhost:9090/bucket-name/object-name  
-WIDTH: Authorization
+WIDTH: Authorization (env.example)
 
 
 ### SOURCE
