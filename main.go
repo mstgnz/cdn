@@ -31,17 +31,19 @@ func main() {
 	}))
 
 	// Aws
-	app.Get("/aws/get-vault-list", awsController.GetVaultList)
+	app.Get("/aws/bucket-list", awsController.BucketList)
+	app.Get("/aws/get-vault-list", awsController.GlacierVaultList)
 
 	// Minio
-	app.Get("/:bucket/w::width/h::height/*", minioController.GetImageWidthHeight)
-	app.Get("/:bucket/w::width/*", minioController.GetImageWidth)
-	app.Get("/:bucket/h::height/*", minioController.GetImageHeight)
 	app.Get("/:bucket/*", minioController.GetImage)
 
-	app.Delete("/:bucket/*", minioController.DeleteImage)
+	app.Delete("delete", minioController.DeleteImage)
+	app.Delete("delete-with-aws", minioController.DeleteImageWithAws)
 
 	app.Post("/upload", minioController.UploadImage)
+	app.Post("/upload-with-aws", minioController.UploadImageWithAws)
+
+	app.Post("/resize", minioController.ResizeImage)
 
 	// Index
 	app.Get("/", func(c *fiber.Ctx) error {
