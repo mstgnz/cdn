@@ -2,19 +2,22 @@ version: "3.5"
 
 services:
   golang:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: compiler
     container_name: cdn-golang
     restart: always
     ports:
       - "9090:9090"
-    working_dir: /go/projects/imagick
+    #working_dir: /go-minio-cdn
     volumes:
-      - ./:/go/projects/imagick
-    command: sh -c "go build -o MinioApi && ./MinioApi"
+      - ./:/go-minio-cdn
+    #command: sh -c "go build -o CdnApp && ./CdnApp"
     depends_on:
       - minio
     networks:
-      - gominio-cdn-api
+      - go-minio-cdn
 
   minio:
     image: minio/minio
@@ -30,10 +33,10 @@ services:
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
     command: server --console-address ":9001" /var/lib/minio
     networks:
-      - gominio-cdn-api
+      - go-minio-cdn
 
 networks:
-  gominio-cdn-api:
+  go-minio-cdn:
     driver: bridge
 
 volumes:

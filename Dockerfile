@@ -1,4 +1,4 @@
-FROM golang:1.17
+FROM golang:1.17 as compiler
 
 # Ignore APT warnings about not having a TTY
 ENV DEBIAN_FRONTEND noninteractive
@@ -39,8 +39,12 @@ RUN cd && \
 	make -j$(nproc) && make install && \
 	ldconfig /usr/local/lib
 
-WORKDIR /go/projects/imagick
+WORKDIR /go-minio-cdn
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-RUN go install
-#RUN go build -o MinioApi
-#CMD ["MinioApi"]
+#RUN go build -o CdnApp .
+#ENTRYPOINT ["./CdnApp"]
+
+RUN curl -sSfL https://raw.githubusercontent.com/cosmtrek/air/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+CMD ["air"]
