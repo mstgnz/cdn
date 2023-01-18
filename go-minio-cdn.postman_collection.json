@@ -1,0 +1,329 @@
+{
+	"info": {
+		"_postman_id": "1bec5620-0e08-4046-b4d1-ecd2457af2e7",
+		"name": "go-minio-cdn",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "5541596"
+	},
+	"item": [
+		{
+			"name": "Get Image",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:9090/mesut/test/dc74020167.jpeg",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"mesut",
+						"test",
+						"dc74020167.jpeg"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Image With Resize",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:9090/mesut/250/250/test/dc74020167.jpeg",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"mesut",
+						"250",
+						"250",
+						"test",
+						"dc74020167.jpeg"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Upload Image",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "3d9704c68f8be7de9e773f0a5562eec14ae024af3315c1871591616bd7e2d8b7",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "bucket",
+							"value": "destech",
+							"type": "text"
+						},
+						{
+							"key": "path",
+							"value": "test",
+							"type": "text"
+						},
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/Users/mstgnz/Downloads/mstgnz.jpeg"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:9090/upload",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"upload"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Upload Image With Aws",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "3d9704c68f8be7de9e773f0a5562eec14ae024af3315c1871591616bd7e2d8b7",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "bucket",
+							"value": "destech",
+							"type": "text"
+						},
+						{
+							"key": "path",
+							"value": "test",
+							"type": "text"
+						},
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/Users/mstgnz/Downloads/mstgnz.jpeg"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:9090/upload-with-aws",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"upload-with-aws"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Resize Image",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "3d9704c68f8be7de9e773f0a5562eec14ae024af3315c1871591616bd7e2d8b7",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "width",
+							"value": "250",
+							"type": "text"
+						},
+						{
+							"key": "height",
+							"value": "250",
+							"type": "text"
+						},
+						{
+							"key": "file",
+							"type": "file",
+							"src": "/Users/mstgnz/Downloads/mstgnz.jpeg"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:9090/resize",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"resize"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Bucket List",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:9090/aws/bucket-list",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"aws",
+						"bucket-list"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Glacier Vault List",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "http://localhost:9090/aws/get-vault-list",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"aws",
+						"get-vault-list"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Image",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "3d9704c68f8be7de9e773f0a5562eec14ae024af3315c1871591616bd7e2d8b7",
+							"type": "string"
+						}
+					]
+				},
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "bucket",
+							"value": "destech",
+							"type": "text"
+						},
+						{
+							"key": "object",
+							"value": "dsSDF3243.png",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:9090/delete",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"delete"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Delete Image With Aws",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "3d9704c68f8be7de9e773f0a5562eec14ae024af3315c1871591616bd7e2d8b7",
+							"type": "string"
+						}
+					]
+				},
+				"method": "DELETE",
+				"header": [],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "bucket",
+							"value": "destech",
+							"type": "text"
+						},
+						{
+							"key": "object",
+							"value": "dsSDF3243.png",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "http://localhost:9090/delete-with-aws",
+					"protocol": "http",
+					"host": [
+						"localhost"
+					],
+					"port": "9090",
+					"path": [
+						"delete-with-aws"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

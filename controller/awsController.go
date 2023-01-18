@@ -6,7 +6,8 @@ import (
 )
 
 type IAwsController interface {
-	GetVaultList(c *fiber.Ctx) error
+	GlacierVaultList(c *fiber.Ctx) error
+	BucketList(c *fiber.Ctx) error
 }
 
 type myAwsController struct {
@@ -17,9 +18,17 @@ func MyAwsController(awsService service.IAwsService) IAwsController {
 	return &myAwsController{awsService: awsService}
 }
 
-func (ac myAwsController) GetVaultList(c *fiber.Ctx) error {
+func (ac myAwsController) BucketList(c *fiber.Ctx) error {
+	buckets, _ := ac.awsService.ListBuckets()
 	return c.JSON(fiber.Map{
-		"error":  false,
+		"status": true,
+		"result": buckets,
+	})
+}
+
+func (ac myAwsController) GlacierVaultList(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"status": true,
 		"result": ac.awsService.GlacierVaultList(),
 	})
 }

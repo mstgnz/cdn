@@ -22,6 +22,9 @@ type IAwsService interface {
 	GlacierVaultList() *glacier.ListVaultsOutput
 	GlacierUploadArchive(vaultName string, fileBuffer []byte) (*glacier.UploadArchiveOutput, error)
 	S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error)
+	ListBuckets() ([]types.Bucket, error)
+	BucketExists(bucketName string) bool
+	DeleteObjects(bucketName string, objectKeys []string) error
 }
 
 type myAwsService struct {
@@ -38,11 +41,44 @@ func (as myAwsService) S3PutObject(bucketName string, objectName string, fileBuf
 	client := s3.NewFromConfig(as.cfg)
 	uploader := manager.NewUploader(client)
 	return uploader.Upload(context.TODO(), &s3.PutObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(objectName),
-		Body:   fileBuffer,
+		Bucket:       aws.String(bucketName),
+		Key:          aws.String(objectName),
+		Body:         fileBuffer,
 		StorageClass: types.StorageClassGlacier,
 	})
+}
+
+func (as myAwsService) ListBuckets() ([]types.Bucket, error) {
+	client := s3.NewFromConfig(as.cfg)
+	result, err := client.ListBuckets(context.TODO(), &s3.ListBucketsInput{})
+	var buckets []types.Bucket
+	if err == nil {
+		buckets = result.Buckets
+	}
+	return buckets, err
+}
+
+func (as myAwsService) BucketExists(bucketName string) bool {
+	buckets, _ := as.ListBuckets()
+	for _, v := range buckets {
+		if *v.Name == bucketName {
+			return true
+		}
+	}
+	return false
+}
+
+func (as myAwsService) DeleteObjects(bucketName string, objectKeys []string) error {
+	client := s3.NewFromConfig(as.cfg)
+	var objectIds []types.ObjectIdentifier
+	for _, key := range objectKeys {
+		objectIds = append(objectIds, types.ObjectIdentifier{Key: aws.String(key)})
+	}
+	_, err := client.DeleteObjects(context.TODO(), &s3.DeleteObjectsInput{
+		Bucket: aws.String(bucketName),
+		Delete: &types.Delete{Objects: objectIds},
+	})
+	return err
 }
 
 func (as myAwsService) GlacierVaultList() *glacier.ListVaultsOutput {

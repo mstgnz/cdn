@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -35,8 +36,7 @@ func StreamToByte(stream io.Reader) []byte {
 }
 
 func ImageToByte(img string) []byte {
-	fileToBeUploaded := img
-	file, err := os.Open(fileToBeUploaded)
+	file, err := os.Open(img)
 	if err != nil {
 		log.Println(err)
 	}
@@ -53,4 +53,19 @@ func SetWidthToHeight(width, height string) (string, string) {
 		width = height
 	}
 	return width, height
+}
+
+func Contains[T comparable](s []T, e T) bool {
+	for _, v := range s {
+		if v == e {
+			return true
+		}
+	}
+	return false
+}
+
+func IsInt(one, two string) bool {
+	_, oneErr := strconv.Atoi(one)
+	_, twoErr := strconv.Atoi(two)
+	return !(oneErr != nil && twoErr != nil)
 }
