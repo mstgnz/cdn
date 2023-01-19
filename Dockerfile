@@ -1,4 +1,4 @@
-FROM golang:1.19 as compiler
+FROM golang:1.17 as compiler
 
 # Ignore APT warnings about not having a TTY
 ENV DEBIAN_FRONTEND noninteractive
@@ -44,7 +44,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 #RUN go build -o CdnApp .
-#ENTRYPOINT ["./CdnApp"]
-
+#CMD ["./CdnApp"]
 RUN curl -sSfL https://raw.githubusercontent.com/cosmtrek/air/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
 CMD ["air"]
