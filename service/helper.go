@@ -55,15 +55,6 @@ func SetWidthToHeight(width, height string) (string, string) {
 	return width, height
 }
 
-func Contains[T comparable](s []T, e T) bool {
-	for _, v := range s {
-		if v == e {
-			return true
-		}
-	}
-	return false
-}
-
 func IsInt(one, two string) bool {
 	_, oneErr := strconv.Atoi(one)
 	_, twoErr := strconv.Atoi(two)
