@@ -1,6 +1,6 @@
 module GominioCdn
 
-go 1.19
+go 1.17
 
 require (
 	github.com/gofiber/fiber/v2 v2.27.0
