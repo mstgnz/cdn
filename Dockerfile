@@ -21,7 +21,7 @@ RUN apt-get update \
         --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-ENV IMAGEMAGICK_VERSION=7.1.0-25
+ENV IMAGEMAGICK_VERSION=7.1.1-8
 
 RUN cd && \
 	wget https://download.imagemagick.org/ImageMagick/download/releases/ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz && \
