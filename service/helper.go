@@ -41,7 +41,9 @@ func ImageToByte(img string) []byte {
 	if err != nil {
 		log.Println(err)
 	}
-	defer file.Close()
+	defer func(file *os.File) {
+		_ = file.Close()
+	}(file)
 	buffer := bufio.NewReader(file)
 	return StreamToByte(buffer)
 }
