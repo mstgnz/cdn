@@ -409,7 +409,9 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 	}
 
 	fileBuffer, err := file.Open()
-	defer fileBuffer.Close()
+	defer func(fileBuffer multipart.File) {
+		_ = fileBuffer.Close()
+	}(fileBuffer)
 
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
