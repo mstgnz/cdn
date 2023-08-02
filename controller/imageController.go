@@ -460,7 +460,6 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
-	fmt.Println(res.Header)
 
 	fileSize, _ := strconv.Atoi(res.Header.Get("Content-Length"))
 	contentType := res.Header.Get("Content-Type")
@@ -470,15 +469,25 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	// Upload with PutObject
 	minioResult, err := i.minioService.PutObject(ctx, bucket, objectName, res.Body, int64(fileSize), minio.PutObjectOptions{ContentType: contentType})
 
+	link := "https://cdn.destechhasar.com/" + bucket + "/" + objectName
+
+	// S3 upload with glacier storage class
+	awsResult, err := i.awsService.S3PutObject(bucket, objectName, res.Body)
+
+	awsErr := fmt.Sprintf("S3 Successfully Uploaded")
+
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
+		awsErr = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
 	}
 
 	return c.JSON(fiber.Map{
-		"error": false,
-		"msg":   minioResult,
+		"error":       false,
+		"minioUpload": fmt.Sprintf("Minio Successfully Uploaded size %d", minioResult.Size),
+		"minioResult": minioResult,
+		"awsUpload":   awsErr,
+		"awsResult":   awsResult,
+		"imageName":   randomName,
+		"objectName":  objectName,
+		"link":        link,
 	})
 }
