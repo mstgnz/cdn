@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"mime/multipart"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ type IImage interface {
 	ResizeImage(c *fiber.Ctx) error
 	DeleteImage(c *fiber.Ctx) error
 	DeleteImageWithAws(c *fiber.Ctx) error
+	UploadImageWithUrl(c *fiber.Ctx) error
 }
 
 type image struct {
@@ -217,7 +219,9 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 
 	// Get Buffer from file
 	fileBuffer, err := file.Open()
-	defer fileBuffer.Close()
+	defer func(fileBuffer multipart.File) {
+		_ = fileBuffer.Close()
+	}(fileBuffer)
 
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -236,7 +240,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	}
 
 	randomName := service.RandomName(10)
-	imageName := randomName + "." + parseFileName[1]
+	imageName := randomName + "." + parseFileName[len(parseFileName)-1]
 	objectName := path + "/" + imageName
 	contentType := file.Header["Content-Type"][0]
 	fileSize := file.Size
@@ -312,7 +316,9 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 
 	// Get Buffer from file
 	fileBuffer, err := file.Open()
-	defer fileBuffer.Close()
+	defer func(fileBuffer multipart.File) {
+		_ = fileBuffer.Close()
+	}(fileBuffer)
 
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -414,4 +420,65 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 
 	c.Set("content-type", http.DetectContentType(service.StreamToByte(fileBuffer)))
 	return c.Send(service.ImagickResize(service.StreamToByte(fileBuffer), uint(hWidth), uint(hHeight)))
+}
+
+func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
+	ctx := context.Background()
+
+	getToken := strings.Split(c.Get("Authorization"), " ")
+	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+		return c.JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid Token",
+		})
+	}
+
+	path := c.FormValue("path")
+	bucket := c.FormValue("bucket")
+	url := c.FormValue("url")
+	extension := c.FormValue("extension")
+
+	if len(path) == 0 || len(bucket) == 0 || len(url) == 0 || len(extension) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "invalid path or bucket or url or extension.",
+		})
+	}
+
+	found, _ := i.minioService.BucketExists(ctx, bucket)
+	if !found {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Bucket Not Found!",
+		})
+	}
+
+	res, err := http.Get(url)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	fmt.Println(res.Header)
+
+	fileSize, _ := strconv.Atoi(res.Header.Get("Content-Length"))
+	contentType := res.Header.Get("Content-Type")
+	randomName := service.RandomName(10)
+	objectName := path + "/" + randomName + "." + extension
+
+	// Upload with PutObject
+	minioResult, err := i.minioService.PutObject(ctx, bucket, objectName, res.Body, int64(fileSize), minio.PutObjectOptions{ContentType: contentType})
+
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"error": false,
+		"msg":   minioResult,
+	})
 }

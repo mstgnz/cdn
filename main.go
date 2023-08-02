@@ -42,6 +42,7 @@ func main() {
 
 	app.Post("/upload", minioController.UploadImage)
 	app.Post("/upload-with-aws", minioController.UploadImageWithAws)
+	app.Post("/upload-url", minioController.UploadImageWithUrl)
 
 	app.Post("/resize", minioController.ResizeImage)
 
