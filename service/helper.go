@@ -3,10 +3,8 @@ package service
 import (
 	"bufio"
 	"bytes"
-	"fmt"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -24,10 +22,7 @@ func GetEnv(key string) string {
 }
 
 func RandomName(length int) string {
-	rand.Seed(time.Now().UnixNano())
-	b := make([]byte, length)
-	rand.Read(b)
-	return fmt.Sprintf("%x", b)[:length]
+	return strconv.FormatInt(time.Now().UnixMicro(), 10)
 }
 
 func StreamToByte(stream io.Reader) []byte {
