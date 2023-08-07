@@ -1,4 +1,4 @@
-FROM golang:1.17 as compiler
+FROM golang:1.20 as compiler
 
 # Ignore APT warnings about not having a TTY
 ENV DEBIAN_FRONTEND noninteractive
@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update \
     && apt-get install -y \
         wget build-essential \
+        ffmpeg \
         pkg-config \
         --no-install-recommends \
     && apt-get -q -y install vim \
@@ -21,7 +22,7 @@ RUN apt-get update \
         --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-ENV IMAGEMAGICK_VERSION=7.1.1-8
+ENV IMAGEMAGICK_VERSION=7.1.1-15
 
 RUN cd && \
 	wget https://download.imagemagick.org/ImageMagick/download/releases/ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz && \
