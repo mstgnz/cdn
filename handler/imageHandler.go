@@ -1,4 +1,4 @@
-package controller
+package handler
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"GominioCdn/service"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
+	"github.com/mstgnz/go-minio-cdn/service"
 )
 
 type IImage interface {
