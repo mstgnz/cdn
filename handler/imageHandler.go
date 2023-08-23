@@ -209,12 +209,17 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		})
 	}
 
-	// Minio Bucket Exists
-	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "Bucket Not Found On Minio!",
-		})
+	// Check to see if already exist bucket
+	exists, err := i.minioService.BucketExists(ctx, bucket)
+	if err != nil && !exists {
+		// Bucket not found so Make a new bucket
+		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  false,
+				"message": "Bucket Not Found And Not Created!",
+			})
+		}
 	}
 
 	// Get Buffer from file
@@ -298,12 +303,17 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 		})
 	}
 
-	// Minio Bucket Exists
-	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "Bucket Not Found On Minio!",
-		})
+	// Check to see if already exist bucket
+	exists, err := i.minioService.BucketExists(ctx, bucket)
+	if err != nil && !exists {
+		// Bucket not found so Make a new bucket
+		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  false,
+				"message": "Bucket Not Found And Not Created!",
+			})
+		}
 	}
 
 	// Aws Bucket Exists
@@ -447,12 +457,17 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 		})
 	}
 
-	found, _ := i.minioService.BucketExists(ctx, bucket)
-	if !found {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Bucket Not Found!",
-		})
+	// Check to see if already exist bucket
+	exists, err := i.minioService.BucketExists(ctx, bucket)
+	if err != nil && !exists {
+		// Bucket not found so Make a new bucket
+		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"status":  false,
+				"message": "Bucket Not Found And Not Created!",
+			})
+		}
 	}
 
 	res, err := http.Get(url)
