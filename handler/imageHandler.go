@@ -13,7 +13,7 @@ import (
 	"github.com/mstgnz/go-minio-cdn/service"
 )
 
-type IImage interface {
+type Image interface {
 	GetImage(c *fiber.Ctx) error
 	UploadImage(c *fiber.Ctx) error
 	UploadImageWithAws(c *fiber.Ctx) error
@@ -25,10 +25,10 @@ type IImage interface {
 
 type image struct {
 	minioService minio.Client
-	awsService   service.IAwsService
+	awsService   service.AwsService
 }
 
-func Image(minioService *minio.Client, awsService service.IAwsService) IImage {
+func NewImage(minioService *minio.Client, awsService service.AwsService) Image {
 	return &image{
 		minioService: *minioService,
 		awsService:   awsService,
@@ -430,7 +430,7 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 		})
 	}
 
-	c.Set("content-type", http.DetectContentType(service.StreamToByte(fileBuffer)))
+	c.Set("Content-Type", http.DetectContentType(service.StreamToByte(fileBuffer)))
 	return c.Send(service.ImagickResize(service.StreamToByte(fileBuffer), uint(hWidth), uint(hHeight)))
 }
 

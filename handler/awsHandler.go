@@ -5,20 +5,20 @@ import (
 	"github.com/mstgnz/go-minio-cdn/service"
 )
 
-type IAwsHandler interface {
+type AwsHandler interface {
 	GlacierVaultList(c *fiber.Ctx) error
 	BucketList(c *fiber.Ctx) error
 }
 
-type myAwsHandler struct {
-	awsService service.IAwsService
+type awsHandler struct {
+	awsService service.AwsService
 }
 
-func MyAwsHandler(awsService service.IAwsService) IAwsHandler {
-	return &myAwsHandler{awsService: awsService}
+func NewAwsHandler(awsService service.AwsService) AwsHandler {
+	return &awsHandler{awsService: awsService}
 }
 
-func (ac myAwsHandler) BucketList(c *fiber.Ctx) error {
+func (ac awsHandler) BucketList(c *fiber.Ctx) error {
 	buckets, _ := ac.awsService.ListBuckets()
 	return c.JSON(fiber.Map{
 		"status": true,
@@ -26,7 +26,7 @@ func (ac myAwsHandler) BucketList(c *fiber.Ctx) error {
 	})
 }
 
-func (ac myAwsHandler) GlacierVaultList(c *fiber.Ctx) error {
+func (ac awsHandler) GlacierVaultList(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"status": true,
 		"result": ac.awsService.GlacierVaultList(),

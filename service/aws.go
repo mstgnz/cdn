@@ -18,7 +18,7 @@ import (
 // https://docs.aws.amazon.com/sdk-for-go/v1/developer-guide/using-glacier-with-go-sdk.html
 // https://docs.aws.amazon.com/cli/latest/reference/glacier/index.html
 
-type IAwsService interface {
+type AwsService interface {
 	GlacierVaultList() *glacier.ListVaultsOutput
 	GlacierUploadArchive(vaultName string, fileBuffer []byte) (*glacier.UploadArchiveOutput, error)
 	S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error)
@@ -27,17 +27,17 @@ type IAwsService interface {
 	DeleteObjects(bucketName string, objectKeys []string) error
 }
 
-type myAwsService struct {
+type awsService struct {
 	cfg aws.Config
 }
 
-func MyAwsService() IAwsService {
+func NewAwsService() AwsService {
 	cfg, _ := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(
 		credentials.NewStaticCredentialsProvider(GetEnv("AWS_ACCESS_KEY_ID"), GetEnv("AWS_SECRET_ACCESS_KEY"), "")))
-	return &myAwsService{cfg: cfg}
+	return &awsService{cfg: cfg}
 }
 
-func (as myAwsService) S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error) {
+func (as awsService) S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error) {
 	client := s3.NewFromConfig(as.cfg)
 	uploader := manager.NewUploader(client)
 	return uploader.Upload(context.TODO(), &s3.PutObjectInput{
@@ -48,7 +48,7 @@ func (as myAwsService) S3PutObject(bucketName string, objectName string, fileBuf
 	})
 }
 
-func (as myAwsService) ListBuckets() ([]types.Bucket, error) {
+func (as awsService) ListBuckets() ([]types.Bucket, error) {
 	client := s3.NewFromConfig(as.cfg)
 	result, err := client.ListBuckets(context.TODO(), &s3.ListBucketsInput{})
 	var buckets []types.Bucket
@@ -58,7 +58,7 @@ func (as myAwsService) ListBuckets() ([]types.Bucket, error) {
 	return buckets, err
 }
 
-func (as myAwsService) BucketExists(bucketName string) bool {
+func (as awsService) BucketExists(bucketName string) bool {
 	buckets, _ := as.ListBuckets()
 	for _, v := range buckets {
 		if *v.Name == bucketName {
@@ -68,7 +68,7 @@ func (as myAwsService) BucketExists(bucketName string) bool {
 	return false
 }
 
-func (as myAwsService) DeleteObjects(bucketName string, objectKeys []string) error {
+func (as awsService) DeleteObjects(bucketName string, objectKeys []string) error {
 	client := s3.NewFromConfig(as.cfg)
 	var objectIds []types.ObjectIdentifier
 	for _, key := range objectKeys {
@@ -81,7 +81,7 @@ func (as myAwsService) DeleteObjects(bucketName string, objectKeys []string) err
 	return err
 }
 
-func (as myAwsService) GlacierVaultList() *glacier.ListVaultsOutput {
+func (as awsService) GlacierVaultList() *glacier.ListVaultsOutput {
 	glacierCls := glacier.NewFromConfig(as.cfg)
 	result, _ := glacierCls.ListVaults(context.Background(), &glacier.ListVaultsInput{})
 
@@ -92,7 +92,7 @@ func (as myAwsService) GlacierVaultList() *glacier.ListVaultsOutput {
 	return result
 }
 
-func (as myAwsService) GlacierUploadArchive(vaultName string, fileBuffer []byte) (*glacier.UploadArchiveOutput, error) {
+func (as awsService) GlacierUploadArchive(vaultName string, fileBuffer []byte) (*glacier.UploadArchiveOutput, error) {
 	glacierCls := glacier.NewFromConfig(as.cfg)
 	return glacierCls.UploadArchive(context.Background(), &glacier.UploadArchiveInput{
 		VaultName: &vaultName,
