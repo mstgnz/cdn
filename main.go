@@ -11,10 +11,10 @@ import (
 )
 
 var (
-	awsService   = service.MyAwsService()
+	awsService   = service.NewAwsService()
 	minioClient  = service.MinioClient()
-	imageHandler = handler.Image(minioClient, awsService)
-	awsHandler   = handler.MyAwsHandler(awsService)
+	imageHandler = handler.NewImage(minioClient, awsService)
+	awsHandler   = handler.NewAwsHandler(awsService)
 )
 
 func main() {
