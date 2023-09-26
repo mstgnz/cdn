@@ -37,7 +37,7 @@ func NewAwsService() AwsService {
 	return &awsService{cfg: cfg}
 }
 
-func (as awsService) S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error) {
+func (as *awsService) S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error) {
 	client := s3.NewFromConfig(as.cfg)
 	uploader := manager.NewUploader(client)
 	return uploader.Upload(context.TODO(), &s3.PutObjectInput{
@@ -48,7 +48,7 @@ func (as awsService) S3PutObject(bucketName string, objectName string, fileBuffe
 	})
 }
 
-func (as awsService) ListBuckets() ([]types.Bucket, error) {
+func (as *awsService) ListBuckets() ([]types.Bucket, error) {
 	client := s3.NewFromConfig(as.cfg)
 	result, err := client.ListBuckets(context.TODO(), &s3.ListBucketsInput{})
 	var buckets []types.Bucket
@@ -58,7 +58,7 @@ func (as awsService) ListBuckets() ([]types.Bucket, error) {
 	return buckets, err
 }
 
-func (as awsService) BucketExists(bucketName string) bool {
+func (as *awsService) BucketExists(bucketName string) bool {
 	buckets, _ := as.ListBuckets()
 	for _, v := range buckets {
 		if *v.Name == bucketName {
@@ -68,7 +68,7 @@ func (as awsService) BucketExists(bucketName string) bool {
 	return false
 }
 
-func (as awsService) DeleteObjects(bucketName string, objectKeys []string) error {
+func (as *awsService) DeleteObjects(bucketName string, objectKeys []string) error {
 	client := s3.NewFromConfig(as.cfg)
 	var objectIds []types.ObjectIdentifier
 	for _, key := range objectKeys {
@@ -81,7 +81,7 @@ func (as awsService) DeleteObjects(bucketName string, objectKeys []string) error
 	return err
 }
 
-func (as awsService) GlacierVaultList() *glacier.ListVaultsOutput {
+func (as *awsService) GlacierVaultList() *glacier.ListVaultsOutput {
 	glacierCls := glacier.NewFromConfig(as.cfg)
 	result, _ := glacierCls.ListVaults(context.Background(), &glacier.ListVaultsInput{})
 
@@ -92,7 +92,7 @@ func (as awsService) GlacierVaultList() *glacier.ListVaultsOutput {
 	return result
 }
 
-func (as awsService) GlacierUploadArchive(vaultName string, fileBuffer []byte) (*glacier.UploadArchiveOutput, error) {
+func (as *awsService) GlacierUploadArchive(vaultName string, fileBuffer []byte) (*glacier.UploadArchiveOutput, error) {
 	glacierCls := glacier.NewFromConfig(as.cfg)
 	return glacierCls.UploadArchive(context.Background(), &glacier.UploadArchiveInput{
 		VaultName: &vaultName,

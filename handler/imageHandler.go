@@ -38,42 +38,53 @@ func NewImage(minioService *minio.Client, awsService service.AwsService) Image {
 func (i image) GetImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	resize := false
 	width := 0
 	height := 0
+	resize := false
 	bucket := c.Params("bucket")
 	objectName := c.Params("*")
 
-	// if resize
 	obj := strings.Split(objectName, "/")
 
-	width, wErr := strconv.Atoi(obj[0])
-	height, hErr := strconv.Atoi(obj[1])
+	if len(obj) >= 3 {
+		getWith, wErr := strconv.Atoi(obj[0])
+		getHeight, hErr := strconv.Atoi(obj[1])
 
-	if wErr == nil && hErr == nil {
-		resize = true
-		objectName = strings.Join(obj[2:], "/")
+		if wErr == nil && hErr == nil {
+			resize = true
+			width = getWith
+			height = getHeight
+			objectName = strings.Join(obj[2:], "/")
+		}
 	}
 
 	// Bucket exists
-	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
-		return c.SendFile("./notfound.png")
+	if found, err := i.minioService.BucketExists(ctx, bucket); !found || err != nil {
+		return c.SendFile("./public/notfound.png")
 	}
 
+	// Get Object
 	object, err := i.minioService.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 
 	if err != nil {
-		return c.SendFile("./notfound.png")
+		return c.SendFile("./public/notfound.png")
 	}
 
+	// Convert Byte
 	getByte := service.StreamToByte(object)
 	if len(getByte) == 0 {
-		return c.SendFile("./notfound.png")
+		return c.SendFile("./public/notfound.png")
 	}
+
+	// Set Content Type
 	c.Set("Content-Type", http.DetectContentType(getByte))
+
+	// Send Resized Image
 	if resize {
 		return c.Send(service.ImagickResize(getByte, uint(width), uint(height)))
 	}
+
+	// Send Original Image
 	return c.Send(getByte)
 }
 
