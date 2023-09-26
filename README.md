@@ -10,7 +10,7 @@ You must change the .env.example file name to .env and enter the required inform
 - `git clone https://github.com/mstgnz/go-minio-cdn.git`
 - `docker-compose up -d`
 
-minio -> http://localhost:9000  
+minio -> http://localhost:9001  
 golang -> http://localhost:9090
 
 #### [Postman Collection](go-minio-cdn.postman_collection.json)
@@ -45,11 +45,8 @@ WIDTH: Authorization (env.example)
 | object | object name |
 
 
-### SOURCE
+### Contributing
+This project is open-source, and contributions are welcome. Feel free to contribute or provide feedback of any kind.
 
-[go s3 pkg](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/s3)   
-[aws storage service](https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-class-intro.html)   
-[minio golang sdk](https://docs.min.io/docs/golang-client-api-reference.html)  
-[imagemagick releases](https://download.imagemagick.org/ImageMagick/download/releases/)   
-[aws-s3-glacier](https://docs.aws.amazon.com/amazonglacier/latest/dev/introduction.html)  
-[aws-cli-glacier](README.md)
+### License
+This project is licensed under the Apache License. See the [LICENSE](https://github.com/mstgnz/go-minio-cdn/blob/main/LICENSE) file for more details.
