@@ -1,3 +1,8 @@
+// Package handler /*
+/*
+## License
+This project is licensed under the APACHE Licence. Refer to https://github.com/mstgnz/go-minio-cdn/blob/main/LICENSE for more information.
+*/
 package handler
 
 import (
