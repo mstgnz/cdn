@@ -4,16 +4,13 @@ services:
   golang:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: compiler
+      dockerfile: dockerfile
     container_name: cdn-golang
     restart: always
     ports:
       - "9090:9090"
-    #working_dir: /go-minio-cdn
     volumes:
       - ./:/go-minio-cdn
-    #command: sh -c "go build -o CdnApp && ./CdnApp"
     depends_on:
       - minio
     networks:

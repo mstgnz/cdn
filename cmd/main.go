@@ -26,8 +26,10 @@ func main() {
 		AllowHeaders: "*",
 	}))
 
+	app.Static("/", "./public")
+
 	app.Use(favicon.New(favicon.Config{
-		File: "./favicon.png",
+		File: "./public/favicon.png",
 	}))
 
 	// Aws
@@ -48,7 +50,7 @@ func main() {
 
 	// Index
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendFile("./index.html")
+		return c.SendFile("index.html")
 	})
 
 	log.Fatal(app.Listen(":9090"))
