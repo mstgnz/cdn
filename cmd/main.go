@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
+	"github.com/joho/godotenv"
 	"github.com/mstgnz/go-minio-cdn/handler"
 	"github.com/mstgnz/go-minio-cdn/service"
 )
@@ -18,6 +19,11 @@ var (
 )
 
 func main() {
+
+	err := godotenv.Load(".env")
+	if err != nil {
+		log.Fatal("Error loading .env file, must be at project root")
+	}
 
 	app := fiber.New(fiber.Config{
 		BodyLimit: 25 * 1024 * 2014,
@@ -34,19 +40,29 @@ func main() {
 		File: "./public/favicon.png",
 	}))
 
+	disableDelete := service.GetBool("DISABLE_DELETE")
+	disableUpload := service.GetBool("DISABLE_UPLOAD")
+	disableGet := service.GetBool("DISABLE_GET")
+
 	// Aws
 	app.Get("/aws/bucket-list", awsHandler.BucketList)
 	app.Get("/aws/get-vault-list", awsHandler.GlacierVaultList)
 
 	// Minio
-	app.Get("/:bucket/*", imageHandler.GetImage)
+	if !disableGet {
+		app.Get("/:bucket/*", imageHandler.GetImage)
+	}
 
-	app.Delete("delete", imageHandler.DeleteImage)
-	app.Delete("delete-with-aws", imageHandler.DeleteImageWithAws)
+	if !disableDelete {
+		app.Delete("delete", imageHandler.DeleteImage)
+		app.Delete("delete-with-aws", imageHandler.DeleteImageWithAws)
+	}
 
-	app.Post("/upload", imageHandler.UploadImage)
-	app.Post("/upload-with-aws", imageHandler.UploadImageWithAws)
-	app.Post("/upload-url", imageHandler.UploadImageWithUrl)
+	if !disableUpload {
+		app.Post("/upload", imageHandler.UploadImage)
+		app.Post("/upload-with-aws", imageHandler.UploadImageWithAws)
+		app.Post("/upload-url", imageHandler.UploadImageWithUrl)
+	}
 
 	app.Post("/resize", imageHandler.ResizeImage)
 
