@@ -9,16 +9,25 @@ import (
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
 func GetEnv(key string) string {
-	err := godotenv.Load(".env")
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
 	return os.Getenv(key)
+}
+
+// GetBool fetches an env var meant to be a bool and follows this logic to
+// determine the value of that bool:
+// if "", return false
+// strconv.ParseBool() otherwise:
+// if that errors, exit;
+// otherwise return the value
+func GetBool(key string) bool {
+	val := os.Getenv(key)
+	v, err := strconv.ParseBool(val)
+	if err != nil {
+		log.Fatalf("invalid boolean environment variable '%s': %v", val, err)
+	}
+	return v
 }
 
 func RandomName(length int) string {
