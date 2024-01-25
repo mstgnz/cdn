@@ -172,61 +172,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
 	}
 
-	if len(path) == 0 || len(bucket) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
-	}
-
-	// Check to see if already exist bucket
-	exists, err := i.minioService.BucketExists(ctx, bucket)
-	if err != nil && !exists {
-		// Bucket not found so Make a new bucket
-		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
-		if err != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!")
-		}
-	}
-
-	// Get Buffer from file
-	fileBuffer, err := file.Open()
-	defer func(fileBuffer multipart.File) {
-		_ = fileBuffer.Close()
-	}(fileBuffer)
-
-	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
-	}
-
-	parseFileName := strings.Split(file.Filename, ".")
-
-	if len(parseFileName) < 2 {
-		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!")
-	}
-
-	randomName := service.RandomName(10)
-	imageName := randomName + "." + parseFileName[len(parseFileName)-1]
-	objectName := path + "/" + imageName
-	contentType := file.Header["Content-Type"][0]
-	fileSize := file.Size
-
-	// Minio Upload
-	_, err = i.minioService.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
-	minioResult := "Minio Successfully Uploaded"
-
-	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
-	}
-
-	url := service.GetEnv("PROJECT_ENDPOINT")
-	url = strings.TrimSuffix(url, "/")
-	link := url + "/" + bucket + "/" + objectName
-
-	return c.JSON(fiber.Map{
-		"status":      true,
-		"minioResult": minioResult,
-		"imageName":   imageName,
-		"objectName":  objectName,
-		"link":        link,
-	})
+	return i.commonUpload(c, ctx, path, bucket, file, false)
 }
 
 func (i image) UploadImageWithAws(c *fiber.Ctx) error {
@@ -244,75 +190,7 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
 	}
 
-	if len(path) == 0 || len(bucket) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
-	}
-
-	// Check to see if already exist bucket
-	exists, err := i.minioService.BucketExists(ctx, bucket)
-	if err != nil && !exists {
-		// Bucket not found so Make a new bucket
-		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
-		if err != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!")
-		}
-	}
-
-	// Aws Bucket Exists
-	if !i.awsService.BucketExists(bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!")
-	}
-
-	// Get Buffer from file
-	fileBuffer, err := file.Open()
-	defer func(fileBuffer multipart.File) {
-		_ = fileBuffer.Close()
-	}(fileBuffer)
-
-	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
-	}
-
-	parseFileName := strings.Split(file.Filename, ".")
-
-	if len(parseFileName) < 2 {
-		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!")
-	}
-
-	randomName := service.RandomName(10)
-	imageName := randomName + "." + parseFileName[1]
-	objectName := path + "/" + imageName
-	contentType := file.Header["Content-Type"][0]
-	fileSize := file.Size
-
-	// Minio Upload
-	_, err = i.minioService.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
-	minioResult := "Minio Successfully Uploaded"
-
-	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
-	}
-
-	url := service.GetEnv("PROJECT_ENDPOINT")
-	url = strings.TrimSuffix(url, "/")
-	link := url + "/" + bucket + "/" + objectName
-
-	// S3 Upload
-	_, err = i.awsService.S3PutObject(bucket, objectName, fileBuffer)
-	awsResult := "S3 Successfully Uploaded"
-
-	if err != nil {
-		awsResult = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
-	}
-
-	return c.JSON(fiber.Map{
-		"status":      true,
-		"minioResult": minioResult,
-		"awsResult":   awsResult,
-		"imageName":   imageName,
-		"objectName":  objectName,
-		"link":        link,
-	})
+	return i.commonUpload(c, ctx, path, bucket, file, true)
 }
 
 func (i image) ResizeImage(c *fiber.Ctx) error {
@@ -408,6 +286,87 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 		"awsUpload":   awsErr,
 		"awsResult":   awsResult,
 		"imageName":   randomName,
+		"objectName":  objectName,
+		"link":        link,
+	})
+}
+
+// Minio And Aws Upload
+func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket string, file *multipart.FileHeader, awsUpload bool) error {
+	// Check to see if the bucket already exists
+	exists, err := i.minioService.BucketExists(ctx, bucket)
+	if err != nil && !exists {
+		// Bucket not found, so create a new one
+		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
+		if err != nil {
+			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!")
+		}
+	}
+
+	// Check if the AWS bucket exists if required
+	if awsUpload && !i.awsService.BucketExists(bucket) {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!")
+	}
+
+	// Get the file buffer
+	fileBuffer, err := file.Open()
+	defer func(fileBuffer multipart.File) {
+		_ = fileBuffer.Close()
+	}(fileBuffer)
+
+	if err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
+	}
+
+	// Parse the file name and extension
+	parseFileName := strings.Split(file.Filename, ".")
+	if len(parseFileName) < 2 {
+		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!")
+	}
+
+	// Generate random name and construct object name
+	randomName := service.RandomName(10)
+	imageName := randomName + "." + parseFileName[1]
+	objectName := path + "/" + imageName
+	contentType := file.Header["Content-Type"][0]
+	fileSize := file.Size
+
+	// Minio Upload
+	_, err = i.minioService.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
+	minioResult := "Minio Successfully Uploaded"
+
+	if err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
+	}
+
+	url := service.GetEnv("PROJECT_ENDPOINT")
+	url = strings.TrimSuffix(url, "/")
+	link := url + "/" + bucket + "/" + objectName
+
+	// S3 Upload
+	if awsUpload {
+
+		awsResult := "S3 Successfully Uploaded"
+
+		if _, err = i.awsService.S3PutObject(bucket, objectName, fileBuffer); err != nil {
+			awsResult = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
+		}
+
+		return c.JSON(fiber.Map{
+			"status":      true,
+			"minioResult": minioResult,
+			"awsResult":   awsResult,
+			"imageName":   imageName,
+			"objectName":  objectName,
+			"link":        link,
+		})
+	}
+
+	// Only Minio upload
+	return c.JSON(fiber.Map{
+		"status":      true,
+		"minioResult": minioResult,
+		"imageName":   imageName,
 		"objectName":  objectName,
 		"link":        link,
 	})
