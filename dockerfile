@@ -22,7 +22,7 @@ RUN apt-get update \
         --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cd && \
+RUN echo "Installing ImageMagick" && cd && \
     wget https://download.imagemagick.org/ImageMagick/download/releases/ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz && \
     tar xvzf ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz && \
     cd ImageMagick* && \
@@ -35,6 +35,7 @@ RUN cd && \
         --with-freetype=yes \
         --with-gslib \
         --disable-docs && \
+    echo "Building ImageMagick" && \
     make -j$(nproc) && make install && \
     ldconfig /usr/local/lib
 
