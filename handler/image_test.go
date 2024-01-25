@@ -7,7 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
-	"github.com/mstgnz/go-minio-cdn/service"
+	"github.com/mstgnz/cdn/service"
 )
 
 func TestNewImage(t *testing.T) {

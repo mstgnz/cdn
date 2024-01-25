@@ -7,8 +7,8 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
 	"github.com/joho/godotenv"
-	"github.com/mstgnz/go-minio-cdn/handler"
-	"github.com/mstgnz/go-minio-cdn/service"
+	"github.com/mstgnz/cdn/handler"
+	"github.com/mstgnz/cdn/service"
 )
 
 var (

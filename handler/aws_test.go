@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/mstgnz/go-minio-cdn/service"
+	"github.com/mstgnz/cdn/service"
 )
 
 func TestNewAwsHandler(t *testing.T) {
