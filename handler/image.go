@@ -22,9 +22,9 @@ type Image interface {
 	GetImage(c *fiber.Ctx) error
 	UploadImage(c *fiber.Ctx) error
 	UploadImageWithAws(c *fiber.Ctx) error
-	ResizeImage(c *fiber.Ctx) error
 	DeleteImage(c *fiber.Ctx) error
 	DeleteImageWithAws(c *fiber.Ctx) error
+	ResizeImage(c *fiber.Ctx) error
 	UploadImageWithUrl(c *fiber.Ctx) error
 }
 
@@ -93,70 +93,6 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	return c.Send(getByte)
 }
 
-func (i image) DeleteImage(c *fiber.Ctx) error {
-
-	ctx := context.Background()
-
-	if err := service.CheckToken(c); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
-	}
-
-	bucket := c.FormValue("bucket")
-	object := c.FormValue("object")
-
-	if len(bucket) == 0 || len(object) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
-	}
-
-	// Minio Bucket Exists
-	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Minio!")
-	}
-
-	err := i.minioService.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{})
-	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
-	}
-
-	return service.Response(c, fiber.StatusOK, true, "File Successfully Deleted")
-}
-
-func (i image) DeleteImageWithAws(c *fiber.Ctx) error {
-
-	ctx := context.Background()
-
-	if err := service.CheckToken(c); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
-	}
-
-	bucket := c.FormValue("bucket")
-	object := c.FormValue("object")
-
-	if len(bucket) == 0 || len(object) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
-	}
-
-	// Minio Bucket Exists
-	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Minio!")
-	}
-
-	// Aws Bucket Exists
-	if !i.awsService.BucketExists(bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!")
-	}
-
-	if err := i.minioService.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{}); err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
-	}
-
-	if err := i.awsService.DeleteObjects(bucket, []string{object}); err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
-	}
-
-	return service.Response(c, fiber.StatusOK, true, "File Successfully Deleted")
-}
-
 func (i image) UploadImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
@@ -191,6 +127,30 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 	}
 
 	return i.commonUpload(c, ctx, path, bucket, file, true)
+}
+
+func (i image) DeleteImage(c *fiber.Ctx) error {
+	ctx := context.Background()
+	bucket := c.FormValue("bucket")
+	object := c.FormValue("object")
+
+	if len(bucket) == 0 || len(object) == 0 {
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
+	}
+
+	return i.deleteObject(c, ctx, bucket, object, false)
+}
+
+func (i image) DeleteImageWithAws(c *fiber.Ctx) error {
+	ctx := context.Background()
+	bucket := c.FormValue("bucket")
+	object := c.FormValue("object")
+
+	if len(bucket) == 0 || len(object) == 0 {
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
+	}
+
+	return i.deleteObject(c, ctx, bucket, object, true)
 }
 
 func (i image) ResizeImage(c *fiber.Ctx) error {
@@ -370,4 +330,36 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 		"objectName":  objectName,
 		"link":        link,
 	})
+}
+
+// Minio And Aws Delete
+func (i image) deleteObject(c *fiber.Ctx, ctx context.Context, bucket, object string, awsDelete bool) error {
+	// Check token
+	if err := service.CheckToken(c); err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
+	}
+
+	// Check if the bucket exists on Minio
+	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Minio!")
+	}
+
+	// Check if the bucket exists on AWS S3 if required
+	if awsDelete && !i.awsService.BucketExists(bucket) {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!")
+	}
+
+	// Remove object from Minio
+	if err := i.minioService.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{}); err != nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
+	}
+
+	// Remove object from AWS S3 if required
+	if awsDelete {
+		if err := i.awsService.DeleteObjects(bucket, []string{object}); err != nil {
+			return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
+		}
+	}
+
+	return service.Response(c, fiber.StatusOK, true, "File Successfully Deleted")
 }
