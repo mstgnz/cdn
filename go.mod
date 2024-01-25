@@ -1,4 +1,4 @@
-module github.com/mstgnz/go-minio-cdn
+module github.com/mstgnz/cdn
 
 go 1.20
 
