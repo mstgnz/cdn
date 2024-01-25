@@ -98,42 +98,27 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	if err := service.CheckToken(c); err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": "Invalid Token",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
 	}
 
 	bucket := c.FormValue("bucket")
 	object := c.FormValue("object")
 
 	if len(bucket) == 0 || len(object) == 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "invalid path or bucket or file.",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
 	}
 
 	// Minio Bucket Exists
 	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "Bucket Not Found On Minio!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Minio!")
 	}
 
 	err := i.minioService.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{})
 	if err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": err.Error(),
-		})
+		return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
 	}
 
-	return c.JSON(fiber.Map{
-		"status":  true,
-		"message": "File Successfully Deleted",
-	})
+	return service.Response(c, fiber.StatusOK, true, "File Successfully Deleted")
 }
 
 func (i image) DeleteImageWithAws(c *fiber.Ctx) error {
@@ -141,67 +126,42 @@ func (i image) DeleteImageWithAws(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	if err := service.CheckToken(c); err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": "Invalid Token",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
 	}
 
 	bucket := c.FormValue("bucket")
 	object := c.FormValue("object")
 
 	if len(bucket) == 0 || len(object) == 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "invalid path or bucket or file.",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
 	}
 
 	// Minio Bucket Exists
 	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "Bucket Not Found On Minio!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Minio!")
 	}
 
 	// Aws Bucket Exists
 	if !i.awsService.BucketExists(bucket) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "Bucket Not Found On Aws S3!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!")
 	}
 
-	err := i.minioService.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{})
-	if err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": err.Error(),
-		})
-	}
-	err = i.awsService.DeleteObjects(bucket, []string{object})
-	if err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": err.Error(),
-		})
+	if err := i.minioService.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{}); err != nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
 	}
 
-	return c.JSON(fiber.Map{
-		"status":  true,
-		"message": "File Successfully Deleted",
-	})
+	if err := i.awsService.DeleteObjects(bucket, []string{object}); err != nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
+	}
+
+	return service.Response(c, fiber.StatusOK, true, "File Successfully Deleted")
 }
 
 func (i image) UploadImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	if err := service.CheckToken(c); err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": "Invalid Token",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
 	}
 
 	path := c.FormValue("path")
@@ -209,17 +169,11 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	file, err := c.FormFile("file")
 
 	if file == nil || err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "File Not Found!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
 	}
 
 	if len(path) == 0 || len(bucket) == 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "invalid path or bucket or file.",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
 	}
 
 	// Check to see if already exist bucket
@@ -228,10 +182,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		// Bucket not found so Make a new bucket
 		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
 		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"status":  false,
-				"message": "Bucket Not Found And Not Created!",
-			})
+			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!")
 		}
 	}
 
@@ -242,19 +193,13 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	}(fileBuffer)
 
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": err.Error(),
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
 	}
 
 	parseFileName := strings.Split(file.Filename, ".")
 
 	if len(parseFileName) < 2 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "File extension not found!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!")
 	}
 
 	randomName := service.RandomName(10)
@@ -268,10 +213,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	minioResult := "Minio Successfully Uploaded"
 
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  false,
-			"message": err.Error(),
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
 	}
 
 	url := service.GetEnv("PROJECT_ENDPOINT")
@@ -291,10 +233,7 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	if err := service.CheckToken(c); err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": "Invalid Token",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
 	}
 
 	path := c.FormValue("path")
@@ -302,17 +241,11 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 	file, err := c.FormFile("file")
 
 	if file == nil || err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "File Not Found!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
 	}
 
 	if len(path) == 0 || len(bucket) == 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "invalid path or bucket or file.",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
 	}
 
 	// Check to see if already exist bucket
@@ -321,19 +254,13 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 		// Bucket not found so Make a new bucket
 		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
 		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"status":  false,
-				"message": "Bucket Not Found And Not Created!",
-			})
+			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!")
 		}
 	}
 
 	// Aws Bucket Exists
 	if !i.awsService.BucketExists(bucket) {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "Bucket Not Found On Aws S3!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!")
 	}
 
 	// Get Buffer from file
@@ -343,19 +270,13 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 	}(fileBuffer)
 
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": err.Error(),
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
 	}
 
 	parseFileName := strings.Split(file.Filename, ".")
 
 	if len(parseFileName) < 2 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "File extension not found!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!")
 	}
 
 	randomName := service.RandomName(10)
@@ -369,10 +290,7 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 	minioResult := "Minio Successfully Uploaded"
 
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"status":  false,
-			"message": err.Error(),
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
 	}
 
 	url := service.GetEnv("PROJECT_ENDPOINT")
@@ -400,10 +318,7 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 func (i image) ResizeImage(c *fiber.Ctx) error {
 
 	if err := service.CheckToken(c); err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": "Invalid Token",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
 	}
 
 	width := c.FormValue("width")
@@ -411,10 +326,7 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 	file, err := c.FormFile("file")
 
 	if file == nil || err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "File Not Found!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
 	}
 
 	width, height = service.SetWidthToHeight(width, height)
@@ -423,10 +335,7 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 	hHeight, hErr := strconv.ParseUint(height, 10, 16)
 
 	if wErr != nil || hErr != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": "width or height invalid!",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "width or height invalid!")
 	}
 
 	fileBuffer, err := file.Open()
@@ -435,10 +344,7 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 	}(fileBuffer)
 
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"status":  false,
-			"message": err.Error(),
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
 	}
 
 	c.Set("Content-Type", http.DetectContentType(service.StreamToByte(fileBuffer)))
@@ -449,10 +355,7 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	if err := service.CheckToken(c); err != nil {
-		return c.JSON(fiber.Map{
-			"status":  false,
-			"message": "Invalid Token",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
 	}
 
 	path := c.FormValue("path")
@@ -461,10 +364,7 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	extension := c.FormValue("extension")
 
 	if len(path) == 0 || len(bucket) == 0 || len(url) == 0 || len(extension) == 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   "invalid path or bucket or url or extension.",
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or url or extension.")
 	}
 
 	// Check to see if already exist bucket
@@ -473,19 +373,13 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 		// Bucket not found so Make a new bucket
 		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
 		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"status":  false,
-				"message": "Bucket Not Found And Not Created!",
-			})
+			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!")
 		}
 	}
 
 	res, err := http.Get(url)
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
 	}
 
 	fileSize, _ := strconv.Atoi(res.Header.Get("Content-Length"))
