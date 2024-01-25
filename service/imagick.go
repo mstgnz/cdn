@@ -19,7 +19,7 @@ func ImagickResize(image []byte, hWidth, hHeight uint) []byte {
 
 	err = mw.ReadImageBlob(image)
 	if err != nil {
-		log.Println(err)
+		log.Println("Error reading image:", err)
 		return ImagickResize(ImageToByte("./notfound.png"), hWidth, hHeight)
 	}
 
@@ -27,14 +27,14 @@ func ImagickResize(image []byte, hWidth, hHeight uint) []byte {
 	// The blur factor is a float, where > 1 is blurry, < 1 is sharp
 	err = mw.ResizeImage(hWidth, hHeight, imagick.FILTER_LANCZOS)
 	if err != nil {
-		log.Println(err)
+		log.Println("Error resizing image:", err)
 		return ImagickResize(ImageToByte("./notfound.png"), hWidth, hHeight)
 	}
 
 	// Set the compression quality to 95 (high quality = low compression)
 	err = mw.SetImageCompressionQuality(95)
 	if err != nil {
-		log.Println(err)
+		log.Println("Error setting compression quality:", err)
 		return ImagickResize(ImageToByte("./notfound.png"), hWidth, hHeight)
 	}
 
