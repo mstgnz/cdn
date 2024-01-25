@@ -10,11 +10,11 @@ services:
     ports:
       - "9090:9090"
     volumes:
-      - ./:/go-minio-cdn
+      - ./:/cdn
     depends_on:
       - minio
     networks:
-      - go-minio-cdn
+      - cdn
 
   minio:
     image: minio/minio
@@ -30,10 +30,10 @@ services:
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
     command: server --console-address ":9001" /var/lib/minio
     networks:
-      - go-minio-cdn
+      - cdn
 
 networks:
-  go-minio-cdn:
+  cdn:
     driver: bridge
 
 volumes:
