@@ -104,3 +104,10 @@ func CheckToken(c *fiber.Ctx) error {
 	}
 	return nil
 }
+
+func Response(c *fiber.Ctx, code int, status bool, message string) error {
+	return c.Status(code).JSON(fiber.Map{
+		"status":  status,
+		"message": message,
+	})
+}
