@@ -97,8 +97,7 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 
 	ctx := context.Background()
 
-	getToken := strings.Split(c.Get("Authorization"), " ")
-	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+	if err := service.CheckToken(c); err != nil {
 		return c.JSON(fiber.Map{
 			"status":  false,
 			"message": "Invalid Token",
@@ -141,8 +140,7 @@ func (i image) DeleteImageWithAws(c *fiber.Ctx) error {
 
 	ctx := context.Background()
 
-	getToken := strings.Split(c.Get("Authorization"), " ")
-	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+	if err := service.CheckToken(c); err != nil {
 		return c.JSON(fiber.Map{
 			"status":  false,
 			"message": "Invalid Token",
@@ -199,8 +197,7 @@ func (i image) DeleteImageWithAws(c *fiber.Ctx) error {
 func (i image) UploadImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	getToken := strings.Split(c.Get("Authorization"), " ")
-	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+	if err := service.CheckToken(c); err != nil {
 		return c.JSON(fiber.Map{
 			"status":  false,
 			"message": "Invalid Token",
@@ -293,8 +290,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	getToken := strings.Split(c.Get("Authorization"), " ")
-	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+	if err := service.CheckToken(c); err != nil {
 		return c.JSON(fiber.Map{
 			"status":  false,
 			"message": "Invalid Token",
@@ -403,8 +399,7 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 
 func (i image) ResizeImage(c *fiber.Ctx) error {
 
-	getToken := strings.Split(c.Get("Authorization"), " ")
-	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+	if err := service.CheckToken(c); err != nil {
 		return c.JSON(fiber.Map{
 			"status":  false,
 			"message": "Invalid Token",
@@ -453,11 +448,10 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	getToken := strings.Split(c.Get("Authorization"), " ")
-	if len(getToken) != 2 || !strings.EqualFold(getToken[1], service.GetEnv("TOKEN")) {
+	if err := service.CheckToken(c); err != nil {
 		return c.JSON(fiber.Map{
-			"error": true,
-			"msg":   "Invalid Token",
+			"status":  false,
+			"message": "Invalid Token",
 		})
 	}
 

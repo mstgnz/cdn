@@ -3,12 +3,16 @@ package service
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 func GetEnv(key string) string {
@@ -91,4 +95,12 @@ func DownloadFile(filepath string, url string) error {
 	// Write the body to file
 	_, err = io.Copy(out, resp.Body)
 	return err
+}
+
+func CheckToken(c *fiber.Ctx) error {
+	getToken := strings.Split(c.Get("Authorization"), " ")
+	if len(getToken) != 2 || !strings.EqualFold(getToken[1], GetEnv("TOKEN")) {
+		return errors.New("invalid token")
+	}
+	return nil
 }
