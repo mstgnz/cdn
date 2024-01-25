@@ -7,7 +7,7 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-func MinioClient() *minio.Client{
+func MinioClient() *minio.Client {
 
 	endpoint := GetEnv("MINIO_ENDPOINT")
 	accessKey := GetEnv("MINIO_ROOT_USER")
@@ -18,7 +18,7 @@ func MinioClient() *minio.Client{
 		Secure: false,
 	})
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatalln("MINIO CLIENT ERROR: ", err)
 	}
 
 	log.Printf("%#v\n", minioClient)
