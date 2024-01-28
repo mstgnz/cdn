@@ -99,4 +99,4 @@ This project is open-source, and contributions are welcome. Feel free to contrib
 
 
 ### License
-This project is licensed under the Apache License. See the [LICENSE](https://github.com/mstgnz/go-minio-cdn/blob/main/LICENSE) file for more details.
+This project is licensed under the Apache License. See the [LICENSE](LICENSE) file for more details.
