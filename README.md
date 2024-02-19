@@ -16,7 +16,7 @@ Follow these steps to set up and run the project:
 
 1- Clone the repository:
 ```bash
-git clone https://github.com/mstgnz/go-minio-cdn.git
+git clone https://github.com/mstgnz/cdn.git
 ```
 2- Rename the .env.example file to .env and enter the required information.
 3- Start the project with Docker Compose:
