@@ -131,8 +131,8 @@ func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 
 func (i image) DeleteImage(c *fiber.Ctx) error {
 	ctx := context.Background()
-	bucket := c.FormValue("bucket")
-	object := c.FormValue("object")
+	bucket := c.Params("bucket")
+	object := c.Params("*")
 
 	if len(bucket) == 0 || len(object) == 0 {
 		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
@@ -143,8 +143,8 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 
 func (i image) DeleteImageWithAws(c *fiber.Ctx) error {
 	ctx := context.Background()
-	bucket := c.FormValue("bucket")
-	object := c.FormValue("object")
+	bucket := c.Params("bucket")
+	object := c.Params("*")
 
 	if len(bucket) == 0 || len(object) == 0 {
 		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
