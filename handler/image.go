@@ -169,7 +169,6 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 
 	width, height = service.SetWidthToHeight(width, height)
 	hWidth, wErr := strconv.ParseUint(width, 10, 16)
-
 	hHeight, hErr := strconv.ParseUint(height, 10, 16)
 
 	if wErr != nil || hErr != nil {
@@ -282,6 +281,14 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 	parseFileName := strings.Split(file.Filename, ".")
 	if len(parseFileName) < 2 {
 		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!")
+	}
+
+	width := c.FormValue("width")
+	height := c.FormValue("height")
+	hWidth, wErr := strconv.ParseUint(width, 10, 16)
+	hHeight, hErr := strconv.ParseUint(height, 10, 16)
+	if wErr == nil && hErr == nil {
+		service.ImagickResize(service.StreamToByte(fileBuffer), uint(hWidth), uint(hHeight))
 	}
 
 	// Generate random name and construct object name

@@ -72,7 +72,7 @@ You can find a [Postman Collection](go-minio-cdn.postman_collection.json) for th
 ### Image Delete
 
 #### Delete from MinIO
-* HTTP DELETE: http://localhost:9090/delete/bucket-name/object-name
+* HTTP DELETE: http://localhost:9090/bucket-name/object-name
 * Headers:
   * Authorization (from .env)
 
