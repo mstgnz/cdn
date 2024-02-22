@@ -51,7 +51,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 
 	obj := strings.Split(objectName, "/")
 
-	if len(obj) >= 3 {
+	if len(obj) >= 3 && service.IsImageFile(objectName) {
 		getWith, wErr := strconv.Atoi(obj[0])
 		getHeight, hErr := strconv.Atoi(obj[1])
 
@@ -185,7 +185,10 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 	}
 
 	c.Set("Content-Type", http.DetectContentType(service.StreamToByte(fileBuffer)))
-	return c.Send(service.ImagickResize(service.StreamToByte(fileBuffer), uint(hWidth), uint(hHeight)))
+	if service.IsImageFile(file.Filename) {
+		return c.Send(service.ImagickResize(service.StreamToByte(fileBuffer), uint(hWidth), uint(hHeight)))
+	}
+	return c.Send(service.StreamToByte(fileBuffer))
 }
 
 func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
@@ -281,14 +284,6 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 	parseFileName := strings.Split(file.Filename, ".")
 	if len(parseFileName) < 2 {
 		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!")
-	}
-
-	width := c.FormValue("width")
-	height := c.FormValue("height")
-	hWidth, wErr := strconv.ParseUint(width, 10, 16)
-	hHeight, hErr := strconv.ParseUint(height, 10, 16)
-	if wErr == nil && hErr == nil {
-		service.ImagickResize(service.StreamToByte(fileBuffer), uint(hWidth), uint(hHeight))
 	}
 
 	// Generate random name and construct object name

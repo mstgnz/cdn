@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -110,4 +111,17 @@ func Response(c *fiber.Ctx, code int, status bool, message string) error {
 		"status":  status,
 		"message": message,
 	})
+}
+
+func IsImageFile(filename string) bool {
+	ext := filepath.Ext(filename)
+
+	ext = strings.ToLower(ext)
+
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff", ".tif", ".webp", ".svg", ".ico", ".raw":
+		return true
+	}
+
+	return false
 }
