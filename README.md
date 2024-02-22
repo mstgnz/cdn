@@ -61,6 +61,19 @@ You can find a [Postman Collection](go-minio-cdn.postman_collection.json) for th
 | file   | choose file |
 
 
+#### Image Resize
+
+* HTTP POST: http://localhost:9090/resize
+* Headers:
+  * Authorization (from .env)
+* Body (form-data):
+
+| KEY    | VALUE       |
+|--------|-------------|
+| width  | 500         |
+| height | 400         |
+| file   | choose file |
+
 ### Image Get
 
 #### Get Image
