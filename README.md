@@ -67,32 +67,21 @@ You can find a [Postman Collection](go-minio-cdn.postman_collection.json) for th
 * HTTP GET: http://localhost:9090/bucket-name/object-name
 
 #### Get Image with Custom Width and Height
-* HTTP GET: http://localhost:9090/bucketname/300/250/object-name
+* HTTP GET: http://localhost:9090/bucket-name/300/250/object-name
 
 ### Image Delete
 
 #### Delete from MinIO
-* HTTP DELETE: http://localhost:9090/delete
+* HTTP DELETE: http://localhost:9090/delete/bucket-name/object-name
 * Headers:
   * Authorization (from .env)
-* Body (form-data):
-
-| KEY    | VALUE       |
-|--------|-------------|
-| bucket | bucket name |
-| object | object name |
 
 
 #### Delete from MinIO and AWS S3
-* HTTP DELETE: http://localhost:9090/delete-with-aws
+* HTTP DELETE: http://localhost:9090/with-aws/bucket-name/object-name
 * Headers:
     * Authorization (from .env)
-* Body (form-data):
 
-| KEY    | VALUE       |
-|--------|-------------|
-| bucket | bucket name |
-| object | object name |
 
 ### Contributing
 This project is open-source, and contributions are welcome. Feel free to contribute or provide feedback of any kind.
