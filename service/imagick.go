@@ -20,7 +20,7 @@ func ImagickResize(image []byte, hWidth, hHeight uint) []byte {
 	err = mw.ReadImageBlob(image)
 	if err != nil {
 		log.Println("Error reading image:", err)
-		return ImagickResize(ImageToByte("./notfound.png"), hWidth, hHeight)
+		return ImagickResize(ImageToByte("./public/notfound.png"), hWidth, hHeight)
 	}
 
 	// Resize the image using the Lanczos filter
@@ -28,14 +28,14 @@ func ImagickResize(image []byte, hWidth, hHeight uint) []byte {
 	err = mw.ResizeImage(hWidth, hHeight, imagick.FILTER_LANCZOS)
 	if err != nil {
 		log.Println("Error resizing image:", err)
-		return ImagickResize(ImageToByte("./notfound.png"), hWidth, hHeight)
+		return ImagickResize(ImageToByte("./public/notfound.png"), hWidth, hHeight)
 	}
 
 	// Set the compression quality to 95 (high quality = low compression)
 	err = mw.SetImageCompressionQuality(95)
 	if err != nil {
 		log.Println("Error setting compression quality:", err)
-		return ImagickResize(ImageToByte("./notfound.png"), hWidth, hHeight)
+		return ImagickResize(ImageToByte("./public/notfound.png"), hWidth, hHeight)
 	}
 
 	// Return byte image
