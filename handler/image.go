@@ -8,6 +8,7 @@ package handler
 import (
 	"context"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -184,11 +185,21 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
 	}
 
-	c.Set("Content-Type", http.DetectContentType(service.StreamToByte(fileBuffer)))
-	if service.IsImageFile(file.Filename) {
-		return c.Send(service.ImagickResize(service.StreamToByte(fileBuffer), uint(hWidth), uint(hHeight)))
+	fileContent, err := io.ReadAll(fileBuffer)
+	if err != nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, "Error reading file content")
 	}
-	return c.Send(service.StreamToByte(fileBuffer))
+
+	// Set Content-Length header
+	c.Set("Content-Length", strconv.Itoa(len(fileContent)))
+
+	// Set Content-Type header
+	c.Set("Content-Type", http.DetectContentType(fileContent))
+
+	if service.IsImageFile(file.Filename) {
+		return c.Send(service.ImagickResize(fileContent, uint(hWidth), uint(hHeight)))
+	}
+	return c.Send(fileContent)
 }
 
 func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
