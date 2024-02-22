@@ -60,8 +60,8 @@ func main() {
 	}
 
 	if !disableDelete {
-		app.Delete("delete", imageHandler.DeleteImage)
-		app.Delete("delete-with-aws", imageHandler.DeleteImageWithAws)
+		app.Delete("/delete", imageHandler.DeleteImage)
+		app.Delete("/delete-with-aws", imageHandler.DeleteImageWithAws)
 	}
 
 	if !disableUpload {
