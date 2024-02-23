@@ -166,11 +166,7 @@ func GetWidthAndHeight(c *fiber.Ctx, requestType string) (bool, uint, uint) {
 
 	if width > 0 || height > 0 {
 		resize = true
-		if width == 0 {
-			width = height
-		} else if height == 0 {
-			height = width
-		}
 	}
+
 	return resize, uint(width), uint(height)
 }
