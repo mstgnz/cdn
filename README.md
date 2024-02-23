@@ -89,7 +89,9 @@ Note: If you want it to be resized when uploading, you must send width and heigh
 * HTTP GET (width and height): http://localhost:9090/bucket-name/w:300/h:200/object-name
 * HTTP GET (width): http://localhost:9090/bucket-name/w:300/object-name
 * HTTP GET (height): http://localhost:9090/bucket-name/h:200/object-name  
-Note: if you use only width, height = width. if you use only height, width = height.
+##### Notes: 
+* if you use only width, height = will be proportioned according to the original size.
+* if you use only height, width = will be proportioned according to the original size.
 
 ### Image Delete
 

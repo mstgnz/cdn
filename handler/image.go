@@ -73,12 +73,18 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		return c.SendFile("./public/notfound.png")
 	}
 
+	// get size
+	if err, orjWidth, orjHeight := service.ImagickGetWidthHeight(getByte); err == nil {
+		c.Set("Width", strconv.Itoa(int(orjWidth)))
+		c.Set("Height", strconv.Itoa(int(orjHeight)))
+	}
+
 	// Set Content Type
 	c.Set("Content-Type", http.DetectContentType(getByte))
 
 	// Send Resized Image
 	if resize {
-		return c.Send(service.ImagickResize(getByte, uint(width), uint(height)))
+		return c.Send(service.ImagickResize(getByte, width, height))
 	}
 
 	// Send Original Image
