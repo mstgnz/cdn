@@ -40,11 +40,14 @@ You can find a [Postman Collection](go-minio-cdn.postman_collection.json) for th
   * Authorization (from .env)
 * Body (form-data):
 
-| KEY    | VALUE       |
-|--------|-------------|
-| bucket | bucket name |
-| path   | slider      |
-| file   | choose file |
+| KEY    | VALUE              |
+|--------|--------------------|
+| bucket | bucket name        |
+| path   | slider             |
+| file   | choose file        |
+| width  | number (optional)  |
+| height | number (optional)  |
+Note: If you want it to be resized when uploading, you must send width and height. Resize operation is optional.
 
 
 #### Upload to MinIO and AWS S3
@@ -54,11 +57,14 @@ You can find a [Postman Collection](go-minio-cdn.postman_collection.json) for th
     * Authorization (from .env)
 * Body (form-data):
 
-| KEY    | VALUE       |
-|--------|-------------|
-| bucket | bucket name |
-| path   | slider      |
-| file   | choose file |
+| KEY    | VALUE             |
+|--------|-------------------|
+| bucket | bucket name       |
+| path   | slider            |
+| file   | choose file       |
+| width  | number (optional) |
+| height | number (optional) |
+Note: If you want it to be resized when uploading, you must send width and height. Resize operation is optional.
 
 
 #### Image Resize
@@ -80,7 +86,10 @@ You can find a [Postman Collection](go-minio-cdn.postman_collection.json) for th
 * HTTP GET: http://localhost:9090/bucket-name/object-name
 
 #### Get Image with Custom Width and Height
-* HTTP GET: http://localhost:9090/bucket-name/300/250/object-name
+* HTTP GET (width and height): http://localhost:9090/bucket-name/w:300/h:200/object-name
+* HTTP GET (width): http://localhost:9090/bucket-name/w:300/object-name
+* HTTP GET (height): http://localhost:9090/bucket-name/h:200/object-name  
+Note: if you use only width, height = width. if you use only height, width = height.
 
 ### Image Delete
 

@@ -16,6 +16,12 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+const (
+	ParamsType  = "params"
+	FormsType   = "forms"
+	HeadersType = "headers"
+)
+
 func GetEnv(key string) string {
 	return os.Getenv(key)
 }
@@ -43,6 +49,10 @@ func StreamToByte(stream io.Reader) []byte {
 	buf := new(bytes.Buffer)
 	_, _ = buf.ReadFrom(stream)
 	return buf.Bytes()
+}
+
+func ByteToStream(data []byte) io.Reader {
+	return bytes.NewReader(data)
 }
 
 func ImageToByte(img string) []byte {
@@ -124,4 +134,43 @@ func IsImageFile(filename string) bool {
 	}
 
 	return false
+}
+
+func GetWidthAndHeight(c *fiber.Ctx, requestType string) (bool, uint, uint) {
+	width, height := 0, 0
+	resize := false
+
+	switch requestType {
+	case ParamsType:
+		if getWidth, err := strconv.Atoi(c.Params("width")); err == nil {
+			width = getWidth
+		}
+		if getHeight, err := strconv.Atoi(c.Params("height")); err == nil {
+			height = getHeight
+		}
+	case FormsType:
+		if getWidth, err := strconv.Atoi(c.FormValue("width")); err == nil {
+			width = getWidth
+		}
+		if getHeight, err := strconv.Atoi(c.FormValue("height")); err == nil {
+			height = getHeight
+		}
+	case HeadersType:
+		if getWidth, err := strconv.Atoi(c.Get("width")); err == nil {
+			width = getWidth
+		}
+		if getHeight, err := strconv.Atoi(c.Get("height")); err == nil {
+			height = getHeight
+		}
+	}
+
+	if width > 0 || height > 0 {
+		resize = true
+		if width == 0 {
+			width = height
+		} else if height == 0 {
+			height = width
+		}
+	}
+	return resize, uint(width), uint(height)
 }

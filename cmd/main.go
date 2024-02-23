@@ -56,6 +56,9 @@ func main() {
 
 	// Minio
 	if !disableGet {
+		app.Get("/:bucket/w::width/h::height/*", imageHandler.GetImage)
+		app.Get("/:bucket/w::width/*", imageHandler.GetImage)
+		app.Get("/:bucket/h::height/*", imageHandler.GetImage)
 		app.Get("/:bucket/*", imageHandler.GetImage)
 	}
 
