@@ -44,24 +44,15 @@ func NewImage(minioService *minio.Client, awsService service.AwsService) Image {
 func (i image) GetImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	width := 0
-	height := 0
-	resize := false
+	var width uint
+	var height uint
+	var resize bool
+
 	bucket := c.Params("bucket")
 	objectName := c.Params("*")
 
-	obj := strings.Split(objectName, "/")
-
-	if len(obj) >= 3 && service.IsImageFile(objectName) {
-		getWith, wErr := strconv.Atoi(obj[0])
-		getHeight, hErr := strconv.Atoi(obj[1])
-
-		if wErr == nil && hErr == nil {
-			resize = true
-			width = getWith
-			height = getHeight
-			objectName = strings.Join(obj[2:], "/")
-		}
+	if service.IsImageFile(objectName) {
+		resize, width, height = service.GetWidthAndHeight(c, service.ParamsType)
 	}
 
 	// Bucket exists
@@ -160,20 +151,11 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
 	}
 
-	width := c.FormValue("width")
-	height := c.FormValue("height")
+	resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
 	file, err := c.FormFile("file")
 
 	if file == nil || err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
-	}
-
-	width, height = service.SetWidthToHeight(width, height)
-	hWidth, wErr := strconv.ParseUint(width, 10, 16)
-	hHeight, hErr := strconv.ParseUint(height, 10, 16)
-
-	if wErr != nil || hErr != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "width or height invalid!")
 	}
 
 	fileBuffer, err := file.Open()
@@ -196,8 +178,8 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 	// Set Content-Type header
 	c.Set("Content-Type", http.DetectContentType(fileContent))
 
-	if service.IsImageFile(file.Filename) {
-		return c.Send(service.ImagickResize(fileContent, uint(hWidth), uint(hHeight)))
+	if resize && service.IsImageFile(file.Filename) {
+		return c.Send(service.ImagickResize(fileContent, width, height))
 	}
 	return c.Send(fileContent)
 }
@@ -303,6 +285,15 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 	objectName := path + "/" + imageName
 	contentType := file.Header["Content-Type"][0]
 	fileSize := file.Size
+
+	// TODO if resize
+	/*resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
+	if fileContent, err := io.ReadAll(fileBuffer); resize && err == nil {
+		_, _ = fileBuffer.Seek(0,0)
+		fileSize = int64(len(fileContent))
+		contentType = http.DetectContentType(fileContent)
+		reader := service.ByteToStream(service.ImagickResize(fileContent, width, height))
+	}*/
 
 	// Minio Upload
 	_, err = i.minioService.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
