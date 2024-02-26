@@ -170,3 +170,38 @@ func GetWidthAndHeight(c *fiber.Ctx, requestType string) (bool, uint, uint) {
 
 	return resize, uint(width), uint(height)
 }
+
+func CreateFile(file []byte) (*os.File, error) {
+	tempFile, err := os.CreateTemp("", "create_image_*.png")
+	if err != nil {
+		return tempFile, err
+	}
+
+	// Write the resized content to the temporary file
+	_, err = tempFile.Write(file)
+	if err != nil {
+		return tempFile, err
+	}
+
+	// Seek back to the beginning of the file
+	_, err = tempFile.Seek(0, 0)
+	if err != nil {
+		return tempFile, err
+	}
+	return tempFile, nil
+}
+
+func RatioWidthHeight(width, height, targetWidth, targetHeight uint) (uint, uint) {
+	whRatio := float64(width) / float64(height)
+	hwRatio := float64(height) / float64(width)
+
+	if targetWidth == 0 {
+		targetWidth = uint(float64(targetHeight) * whRatio)
+	}
+
+	if targetHeight == 0 {
+		targetHeight = uint(float64(targetWidth) * hwRatio)
+	}
+
+	return targetWidth, targetHeight
+}
