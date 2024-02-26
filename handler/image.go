@@ -292,14 +292,39 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 	contentType := file.Header["Content-Type"][0]
 	fileSize := file.Size
 
-	// TODO if resize
-	/*resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
-	if fileContent, err := io.ReadAll(fileBuffer); resize && err == nil {
-		_, _ = fileBuffer.Seek(0,0)
+	// size
+	if fileContent, err := io.ReadAll(fileBuffer); err == nil {
+		_, _ = fileBuffer.Seek(0, 0)
 		fileSize = int64(len(fileContent))
 		contentType = http.DetectContentType(fileContent)
-		reader := service.ByteToStream(service.ImagickResize(fileContent, width, height))
-	}*/
+
+		// set size
+		var (
+			orjWidth  uint
+			orjHeight uint
+		)
+		if err, orjWidth, orjHeight = service.ImagickGetWidthHeight(fileContent); err == nil {
+			c.Set("Width", strconv.Itoa(int(orjWidth)))
+			c.Set("Height", strconv.Itoa(int(orjHeight)))
+		}
+
+		// resize
+		resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
+		if resize && orjWidth > 0 && orjHeight > 0 {
+			width, height = service.RatioWidthHeight(orjWidth, orjHeight, width, height)
+			fileContent = service.ImagickResize(fileContent, width, height)
+			if tempFile, err := service.CreateFile(fileContent); err == nil {
+				defer func() {
+					_ = tempFile.Close()
+				}()
+				fileSize = int64(len(fileContent))
+				c.Set("Width", strconv.Itoa(int(width)))
+				c.Set("Height", strconv.Itoa(int(height)))
+				c.Set("Content-Length", strconv.Itoa(len(fileContent)))
+				fileBuffer = tempFile
+			}
+		}
+	}
 
 	// Minio Upload
 	_, err = i.minioService.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})

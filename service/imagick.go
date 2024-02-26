@@ -22,6 +22,20 @@ func ImagickGetWidthHeight(image []byte) (error, uint, uint) {
 	return nil, mw.GetImageWidth(), mw.GetImageHeight()
 }
 
+func ImagickFormat(image []byte) (error, string) {
+	imagick.Initialize()
+	defer imagick.Terminate()
+
+	mw := imagick.NewMagickWand()
+	defer mw.Destroy()
+
+	if err := mw.ReadImageBlob(image); err != nil {
+		return err, ""
+	}
+
+	return nil, mw.GetImageFormat()
+}
+
 func ImagickResize(image []byte, targetWidth, targetHeight uint) []byte {
 	imagick.Initialize()
 	defer imagick.Terminate()
@@ -39,22 +53,12 @@ func ImagickResize(image []byte, targetWidth, targetHeight uint) []byte {
 
 	width := mw.GetImageWidth()
 	height := mw.GetImageHeight()
-	ratio := width / height
 
-	if targetWidth == 0 {
-		targetWidth = width
-	}
-
-	if targetHeight == 0 {
-		targetHeight = height
-	}
-
-	newWidth := targetHeight * ratio
-	newHeight := targetWidth / ratio
+	targetWidth, targetHeight = RatioWidthHeight(width, height, targetWidth, targetHeight)
 
 	// Resize the image using the Lanczos filter
 	// The blur factor is a float, where > 1 is blurry, < 1 is sharp
-	err = mw.ResizeImage(newWidth, newHeight, imagick.FILTER_LANCZOS)
+	err = mw.ResizeImage(targetWidth, targetHeight, imagick.FILTER_LANCZOS)
 	if err != nil {
 		log.Println("Error resizing image:", err)
 		return image
