@@ -1,0 +1,429 @@
+openapi: 3.1.0
+info:
+  title: "Cdn API Documentation"
+  description: "This project for hosting your static files. resize feature is available for photos with imagick. your files are kept on minio. optionally you can use backup with aws s3."
+  version: "1.2.0"
+components:
+  securitySchemes:
+    BearerAuth:
+      type: apiKey
+      in: header
+      name: Authorization
+paths:
+  /{bucket}/w:{width}/h:{height}/{object}:
+    get:
+      summary: "Get Image With Width And Height"
+      operationId: "GetImageWithWidthAndHeight"
+      tags:
+        - "File"
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+        - name: "width"
+          in: "path"
+          description: "Width"
+          schema:
+            type: integer
+          required: true
+        - name: "height"
+          in: "path"
+          description: "Height"
+          schema:
+            type: integer
+          required: true
+        - name: "object"
+          in: "path"
+          description: "Object Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: "File Found"
+        404:
+          description: "File Not Found"
+  /{bucket}/w:{width}/{object}:
+    get:
+      summary: "Get Image With Width"
+      operationId: "GetImageWithWidth"
+      tags:
+        - "File"
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+        - name: "width"
+          in: "path"
+          description: "Width"
+          schema:
+            type: integer
+          required: true
+        - name: "object"
+          in: "path"
+          description: "Object Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: "File Found"
+        404:
+          description: "File Not Found"
+  /{bucket}/h:{height}/{object}:
+    get:
+      summary: "Get Image With Height"
+      operationId: "GetImageWithHeight"
+      tags:
+        - "File"
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+        - name: "height"
+          in: "path"
+          description: "Height"
+          schema:
+            type: integer
+          required: true
+        - name: "object"
+          in: "path"
+          description: "Object Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: "File Found"
+        404:
+          description: "File Not Found"
+  /{bucket}/{object}:
+    get:
+      summary: "Get Image"
+      operationId: "GetImage"
+      tags:
+        - "File"
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+        - name: "object"
+          in: "path"
+          description: "Object Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: "File Found"
+        404:
+          description: "File Not Found"
+    delete:
+      summary: "Delete Image"
+      operationId: "DeleteImage"
+      tags:
+        - "File"
+      security:
+        - BearerAuth: ["Authorization"]
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+        - name: "object"
+          in: "path"
+          description: "Object Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: "File Successfully Deleted"
+        400:
+          description: "Invalid path or bucket or file"
+        500:
+          description: "Minio Error"
+  /with-aws/{bucket}/{object}:
+    delete:
+      summary: "Delete Image With Aws"
+      operationId: "DeleteImageWithAws"
+      tags:
+        - "File"
+      security:
+        - BearerAuth: ["Authorization"]
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+        - name: "object"
+          in: "path"
+          description: "Object Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: "File Successfully Deleted"
+        400:
+          description: "Invalid path or bucket or file"
+        500:
+          description: "Minio or Aws Error"
+  /resize:
+    post:
+      summary: "Resize Image Without Save"
+      operationId: "Resize"
+      tags:
+        - "Resize"
+      security:
+        - BearerAuth: ["Authorization"]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - width
+                - height
+                - file
+              properties:
+                width:
+                  type: integer
+                height:
+                  type: integer
+                file:
+                  type: string
+                  format: binary
+      responses:
+        200:
+          description: "File Found"
+        404:
+          description: "File Not Found"
+  /upload:
+    post:
+      summary: "Upload File"
+      operationId: "Upload"
+      tags:
+        - "Upload"
+      security:
+        - BearerAuth: ["Authorization"]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - bucket
+                - path
+                - file
+              properties:
+                bucket:
+                  type: string
+                path:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+                width:
+                  type: integer
+                height:
+                  type: integer
+      responses:
+        201:
+          description: "Successful Created"
+        400:
+          description: "Some Error"
+  /upload-with-aws:
+    post:
+      summary: "Upload File With Aws"
+      operationId: "UploadImageWithAws"
+      tags:
+        - "Upload"
+      security:
+        - BearerAuth: ["Authorization"]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - bucket
+                - path
+                - file
+              properties:
+                bucket:
+                  type: string
+                path:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+                width:
+                  type: integer
+                height:
+                  type: integer
+      responses:
+        201:
+          description: "Successful Created"
+        400:
+          description: "Some Error"
+  /upload-url:
+    post:
+      summary: "Upload Url"
+      operationId: "UploadImageWithUrl"
+      tags:
+        - "Upload"
+      security:
+        - BearerAuth: ["Authorization"]
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - bucket
+                - path
+                - url
+                - extension
+              properties:
+                bucket:
+                  type: string
+                path:
+                  type: string
+                url:
+                  type: string
+                extension:
+                  type: string
+      responses:
+        201:
+          description: "Successful Created"
+        400:
+          description: "Some Error"
+  /minio/bucket-list:
+    get:
+      summary: "Minio Bucket Lists"
+      operationId: "MinioBucketLists"
+      tags:
+        - "Minio"
+      security:
+        - BearerAuth: [ "Authorization" ]
+      responses:
+        200:
+          description: "Bucket List"
+  /minio/{bucket}/exists:
+    get:
+      summary: "Minio Bucket Exists"
+      operationId: "MinioBucketExists"
+      tags:
+        - "Minio"
+      security:
+        - BearerAuth: [ "Authorization" ]
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        302:
+          description: "Bucket Exists"
+        404:
+          description: "Bucket Not Exists"
+  /minio/{bucket}/create:
+    get:
+      summary: "Minio Bucket Create"
+      operationId: "MinioBucketCreate"
+      tags:
+        - "Minio"
+      security:
+        - BearerAuth: [ "Authorization" ]
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        200:
+          description: "Failed to Create Bucket"
+        201:
+          description: "Bucket Create"
+  /minio/{bucket}/delete:
+    delete:
+      summary: "Minio Bucket Delete"
+      operationId: "MinioBucketDelete"
+      tags:
+        - "Minio"
+      security:
+        - BearerAuth: [ "Authorization" ]
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        responses:
+          200:
+            description: "Bucket Delete"
+  /aws/bucket-list:
+    get:
+      summary: "Aws Bucket List"
+      operationId: "AwsBucketList"
+      tags:
+        - "Aws"
+      security:
+        - BearerAuth: [ "Authorization" ]
+      responses:
+        200:
+          description: "Bucket List"
+  /aws/vault-list:
+    get:
+      summary: "Aws Vault List"
+      operationId: "AwsVaultList"
+      tags:
+        - "Aws"
+      security:
+        - BearerAuth: [ "Authorization" ]
+      responses:
+        200:
+          description: "Vault List"
+  /aws/{bucket}/exists:
+    get:
+      summary: "Aws Bucket Exists"
+      operationId: "AwsBucketExists"
+      tags:
+        - "Aws"
+      security:
+        - BearerAuth: [ "Authorization" ]
+      parameters:
+        - name: "bucket"
+          in: "path"
+          description: "Bucket Name"
+          schema:
+            type: string
+          required: true
+      responses:
+        302:
+          description: "Bucket Exists"
+        404:
+          description: "Bucket Not Exists"

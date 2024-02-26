@@ -27,88 +27,11 @@ Now, you can access the following services:
 * MinIO: http://localhost:9001
 * Go API: http://localhost:9090
 
-### Postman Collection
-You can find a [Postman Collection](go-minio-cdn.postman_collection.json) for this project in the go-minio-cdn.postman_collection.json file.
 
-
-### Image Upload
-
-#### Upload to MinIO
-
-* HTTP POST: http://localhost:9090/upload
-* Headers:
-  * Authorization (from .env)
-* Body (form-data):
-
-| KEY    | VALUE              |
-|--------|--------------------|
-| bucket | bucket name        |
-| path   | slider             |
-| file   | choose file        |
-| width  | number (optional)  |
-| height | number (optional)  |  
-
-Note: You can submit width and height if you want it to be resized during installation. If you send only width, the height will be assigned proportionally. If you send only the height, the width will be assigned proportionally. The resizing process is optional.
-
-
-#### Upload to MinIO and AWS S3
-
-If you want s3 glacier to be installed in your account, you should use this url.
-
-* HTTP POST: http://localhost:9090/upload-with-aws
-* Headers:
-    * Authorization (from .env)
-* Body (form-data):
-
-| KEY    | VALUE             |
-|--------|-------------------|
-| bucket | bucket name       |
-| path   | slider            |
-| file   | choose file       |
-| width  | number (optional) |
-| height | number (optional) |  
-
-Note: You can submit width and height if you want it to be resized during installation. If you send only width, the height will be assigned proportionally. If you send only the height, the width will be assigned proportionally. The resizing process is optional.
-
-
-#### Image Resize
-
-* HTTP POST: http://localhost:9090/resize
-* Headers:
-  * Authorization (from .env)
-* Body (form-data):
-
-| KEY    | VALUE       |
-|--------|-------------|
-| width  | 500         |
-| height | 400         |
-| file   | choose file |
-
-### Image Get
-
-#### Get Image
-* HTTP GET: http://localhost:9090/bucket-name/object-name
-
-#### Get Image with Custom Width and Height
-* HTTP GET (width and height): http://localhost:9090/bucket-name/w:300/h:200/object-name
-* HTTP GET (width): http://localhost:9090/bucket-name/w:300/object-name
-* HTTP GET (height): http://localhost:9090/bucket-name/h:200/object-name  
-##### Notes: 
-* if you use only width, height = will be proportioned according to the original size.
-* if you use only height, width = will be proportioned according to the original size.
-
-### Image Delete
-
-#### Delete from MinIO
-* HTTP DELETE: http://localhost:9090/bucket-name/object-name
-* Headers:
-  * Authorization (from .env)
-
-
-#### Delete from MinIO and AWS S3
-* HTTP DELETE: http://localhost:9090/with-aws/bucket-name/object-name
-* Headers:
-    * Authorization (from .env)
+### Usage
+- All usage: From the [Swagger UI](http://localhost:9090/swagger) user interface you can see and try all the uses. Or you can review [swagger.yaml](/public/swagger.yaml).
+- You can submit width and height if you want it to be resized during upload. If you send only width, the height will be assigned proportionally. If you send only the height, the width will be assigned proportionally. The resizing process is optional.
+- Get: if you use only width, height = will be proportioned according to the original size. If you use only height, width = will be proportioned according to the original size.
 
 
 ### Contributing
