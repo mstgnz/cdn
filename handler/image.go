@@ -216,7 +216,9 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	// Upload with PutObject
 	minioResult, err := i.minioService.PutObject(ctx, bucket, objectName, res.Body, int64(fileSize), minio.PutObjectOptions{ContentType: contentType})
 
-	link := "https://cdn.destechhasar.com/" + bucket + "/" + objectName
+	url = service.GetEnv("PROJECT_ENDPOINT")
+	url = strings.TrimSuffix(url, "/")
+	link := url + "/" + bucket + "/" + objectName
 
 	// S3 upload with glacier storage class
 	awsResult, err := i.awsService.S3PutObject(bucket, objectName, res.Body)
