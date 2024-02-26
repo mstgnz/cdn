@@ -46,11 +46,14 @@ You can find a [Postman Collection](go-minio-cdn.postman_collection.json) for th
 | path   | slider             |
 | file   | choose file        |
 | width  | number (optional)  |
-| height | number (optional)  |
-Note: If you want it to be resized when uploading, you must send width and height. Resize operation is optional.
+| height | number (optional)  |  
+
+Note: You can submit width and height if you want it to be resized during installation. If you send only width, the height will be assigned proportionally. If you send only the height, the width will be assigned proportionally. The resizing process is optional.
 
 
 #### Upload to MinIO and AWS S3
+
+If you want s3 glacier to be installed in your account, you should use this url.
 
 * HTTP POST: http://localhost:9090/upload-with-aws
 * Headers:
@@ -63,8 +66,9 @@ Note: If you want it to be resized when uploading, you must send width and heigh
 | path   | slider            |
 | file   | choose file       |
 | width  | number (optional) |
-| height | number (optional) |
-Note: If you want it to be resized when uploading, you must send width and height. Resize operation is optional.
+| height | number (optional) |  
+
+Note: You can submit width and height if you want it to be resized during installation. If you send only width, the height will be assigned proportionally. If you send only the height, the width will be assigned proportionally. The resizing process is optional.
 
 
 #### Image Resize
