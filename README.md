@@ -3,14 +3,14 @@
 
 ### Overview
 
-This project allows you to create your own Content Delivery Network (CDN) service using MinIO and AWS S3. You can use this CDN service to upload, retrieve, and delete images.
+This project allows you to create your own Content Delivery Network (CDN) service using MinIO and AWS S3. You can use this CDN service to upload, retrieve, and delete files.
 
 ### Prerequisites
 Before you get started, make sure you have the following prerequisites installed on your computer:
 * [Docker](https://www.docker.com/): You will need Docker to run this project.
 * [Aws S3](https://docs.aws.amazon.com/s3/): In this project s3 backup is currently used (optional)
 * [Minio](https://min.io/docs/minio/container/index.html): The project runs entirely on Minio.
-* [ImageMagick](https://imagemagick.org/index.php): currently only resize feature is active.
+* [ImageMagick](https://imagemagick.org/index.php): currently only resize feature is active. Only image files
 
 
 ### Installation
