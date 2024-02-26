@@ -1,13 +1,16 @@
-## CDN API with Go and MinIO
-#### Create your own Cdn service on Minio and Aws with Golang.
+## CDN API with MinIO and Aws
+#### Create your own Cdn service on Minio and Aws.
 
 ### Overview
 
-This project allows you to create your own Content Delivery Network (CDN) service using MinIO and AWS S3 with the Go programming language. You can use this CDN service to upload, retrieve, and delete images.
+This project allows you to create your own Content Delivery Network (CDN) service using MinIO and AWS S3. You can use this CDN service to upload, retrieve, and delete images.
 
 ### Prerequisites
 Before you get started, make sure you have the following prerequisites installed on your computer:
 * [Docker](https://www.docker.com/): You will need Docker to run this project.
+* [Aws S3](https://docs.aws.amazon.com/s3/): In this project s3 backup is currently used (optional)
+* [Minio](https://min.io/docs/minio/container/index.html): The project runs entirely on Minio.
+* [ImageMagick](https://imagemagick.org/index.php): currently only resize feature is active.
 
 
 ### Installation
@@ -23,6 +26,11 @@ git clone https://github.com/mstgnz/cdn.git
 ```bash
 docker-compose up -d
 ```
+OR
+```bash
+make
+```
+
 Now, you can access the following services:
 * MinIO: http://localhost:9001
 * Go API: http://localhost:9090
