@@ -17,6 +17,7 @@ var (
 	minioClient  *minio.Client
 	imageHandler handler.Image
 	awsHandler   handler.AwsHandler
+	minioHandler handler.MinioHandler
 )
 
 func main() {
@@ -30,6 +31,7 @@ func main() {
 	minioClient = service.MinioClient()
 	imageHandler = handler.NewImage(minioClient, awsService)
 	awsHandler = handler.NewAwsHandler(awsService)
+	minioHandler = handler.NewMinioHandler(minioClient)
 
 	app := fiber.New(fiber.Config{
 		BodyLimit: 25 * 1024 * 2014,
@@ -40,8 +42,6 @@ func main() {
 		AllowHeaders: "*",
 	}))
 
-	app.Static("/", "./public")
-
 	app.Use(favicon.New(favicon.Config{
 		File: "./public/favicon.png",
 	}))
@@ -50,9 +50,29 @@ func main() {
 	disableUpload := service.GetBool("DISABLE_UPLOAD")
 	disableGet := service.GetBool("DISABLE_GET")
 
+	// Swagger
+	app.Get("/swagger", func(c *fiber.Ctx) error {
+		return c.SendFile("./public/swagger.html")
+	})
+	app.Get("/swagger.yaml", func(c *fiber.Ctx) error {
+		return c.SendFile("./public/swagger.yaml")
+	})
+
 	// Aws
-	app.Get("/aws/bucket-list", awsHandler.BucketList)
-	app.Get("/aws/get-vault-list", awsHandler.GlacierVaultList)
+	aws := app.Group("/aws", AuthMiddleware)
+	aws.Get("/bucket-list", awsHandler.BucketList)
+	aws.Get("/:bucket/exists", awsHandler.BucketExists)
+	aws.Get("/vault-list", awsHandler.GlacierVaultList)
+
+	// Minio
+	io := app.Group("/minio", AuthMiddleware)
+	io.Get("/bucket-list", minioHandler.BucketList)
+	io.Get("/:bucket/exists", minioHandler.BucketExists)
+	io.Get("/:bucket/create", minioHandler.CreateBucket)
+	io.Get("/:bucket/delete", minioHandler.RemoveBucket)
+
+	// resize
+	app.Post("/resize", imageHandler.ResizeImage)
 
 	// Minio
 	if !disableGet {
@@ -63,23 +83,28 @@ func main() {
 	}
 
 	if !disableDelete {
-		app.Delete("/with-aws/:bucket/*", imageHandler.DeleteImageWithAws)
-		app.Delete("/:bucket/*", imageHandler.DeleteImage)
+		app.Delete("/with-aws/:bucket/*", AuthMiddleware, imageHandler.DeleteImageWithAws)
+		app.Delete("/:bucket/*", AuthMiddleware, imageHandler.DeleteImage)
 	}
 
 	if !disableUpload {
-		app.Post("/upload", imageHandler.UploadImage)
-		app.Post("/upload-with-aws", imageHandler.UploadImageWithAws)
-		app.Post("/upload-url", imageHandler.UploadImageWithUrl)
+		app.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
+		app.Post("/upload-with-aws", AuthMiddleware, imageHandler.UploadImageWithAws)
+		app.Post("/upload-url", AuthMiddleware, imageHandler.UploadImageWithUrl)
 	}
-
-	app.Post("/resize", imageHandler.ResizeImage)
 
 	// Index
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendFile("index.html")
+		return c.SendFile("./public/index.html")
 	})
 
 	log.Fatal(app.Listen(":9090"))
 
+}
+
+func AuthMiddleware(c *fiber.Ctx) error {
+	if err := service.CheckToken(c); err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token", nil)
+	}
+	return c.Next()
 }

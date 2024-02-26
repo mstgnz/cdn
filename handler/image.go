@@ -42,6 +42,7 @@ func NewImage(minioService *minio.Client, awsService service.AwsService) Image {
 }
 
 func (i image) GetImage(c *fiber.Ctx) error {
+	c.Status(http.StatusNotFound)
 	ctx := context.Background()
 
 	var width uint
@@ -88,22 +89,19 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	}
 
 	// Send Original Image
+	c.Status(http.StatusFound)
 	return c.Send(getByte)
 }
 
 func (i image) UploadImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	if err := service.CheckToken(c); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
-	}
-
 	path := c.FormValue("path")
 	bucket := c.FormValue("bucket")
 	file, err := c.FormFile("file")
 
 	if file == nil || err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
+		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!", nil)
 	}
 
 	return i.commonUpload(c, ctx, path, bucket, file, false)
@@ -112,16 +110,12 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 func (i image) UploadImageWithAws(c *fiber.Ctx) error {
 	ctx := context.Background()
 
-	if err := service.CheckToken(c); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
-	}
-
 	path := c.FormValue("path")
 	bucket := c.FormValue("bucket")
 	file, err := c.FormFile("file")
 
 	if file == nil || err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
+		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!", nil)
 	}
 
 	return i.commonUpload(c, ctx, path, bucket, file, true)
@@ -133,7 +127,7 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 	object := c.Params("*")
 
 	if len(bucket) == 0 || len(object) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.", nil)
 	}
 
 	return i.deleteObject(c, ctx, bucket, object, false)
@@ -145,23 +139,19 @@ func (i image) DeleteImageWithAws(c *fiber.Ctx) error {
 	object := c.Params("*")
 
 	if len(bucket) == 0 || len(object) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.")
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.", nil)
 	}
 
 	return i.deleteObject(c, ctx, bucket, object, true)
 }
 
 func (i image) ResizeImage(c *fiber.Ctx) error {
-
-	if err := service.CheckToken(c); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
-	}
-
+	c.Status(http.StatusNotFound)
 	resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
 	file, err := c.FormFile("file")
 
 	if file == nil || err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!")
+		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!", nil)
 	}
 
 	fileBuffer, err := file.Open()
@@ -170,12 +160,12 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 	}(fileBuffer)
 
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	fileContent, err := io.ReadAll(fileBuffer)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "Error reading file content")
+		return service.Response(c, fiber.StatusInternalServerError, false, "Error reading file content", nil)
 	}
 
 	// Set Content-Length header
@@ -187,15 +177,12 @@ func (i image) ResizeImage(c *fiber.Ctx) error {
 	if resize && service.IsImageFile(file.Filename) {
 		return c.Send(service.ImagickResize(fileContent, width, height))
 	}
+	c.Status(http.StatusFound)
 	return c.Send(fileContent)
 }
 
 func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	ctx := context.Background()
-
-	if err := service.CheckToken(c); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
-	}
 
 	path := c.FormValue("path")
 	bucket := c.FormValue("bucket")
@@ -203,7 +190,7 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	extension := c.FormValue("extension")
 
 	if len(path) == 0 || len(bucket) == 0 || len(url) == 0 || len(extension) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or url or extension.")
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or url or extension.", nil)
 	}
 
 	// Check to see if already exist bucket
@@ -212,13 +199,13 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 		// Bucket not found so Make a new bucket
 		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
 		if err != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!")
+			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
 		}
 	}
 
 	res, err := http.Get(url)
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	fileSize, _ := strconv.Atoi(res.Header.Get("Content-Length"))
@@ -240,8 +227,7 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 		awsErr = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
 	}
 
-	return c.JSON(fiber.Map{
-		"error":       false,
+	return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
 		"minioUpload": fmt.Sprintf("Minio Successfully Uploaded size %d", minioResult.Size),
 		"minioResult": minioResult,
 		"awsUpload":   awsErr,
@@ -260,13 +246,13 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 		// Bucket not found, so create a new one
 		err = i.minioService.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
 		if err != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!")
+			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
 		}
 	}
 
 	// Check if the AWS bucket exists if required
 	if awsUpload && !i.awsService.BucketExists(bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!")
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!", nil)
 	}
 
 	// Get the file buffer
@@ -276,13 +262,13 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 	}(fileBuffer)
 
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	// Parse the file name and extension
 	parseFileName := strings.Split(file.Filename, ".")
 	if len(parseFileName) < 2 {
-		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!")
+		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!", nil)
 	}
 
 	// Generate random name and construct object name
@@ -331,7 +317,7 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 	minioResult := "Minio Successfully Uploaded"
 
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error())
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	url := service.GetEnv("PROJECT_ENDPOINT")
@@ -346,9 +332,7 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 		if _, err = i.awsService.S3PutObject(bucket, objectName, fileBuffer); err != nil {
 			awsResult = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
 		}
-
-		return c.JSON(fiber.Map{
-			"status":      true,
+		return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
 			"minioResult": minioResult,
 			"awsResult":   awsResult,
 			"imageName":   imageName,
@@ -358,8 +342,7 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 	}
 
 	// Only Minio upload
-	return c.JSON(fiber.Map{
-		"status":      true,
+	return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
 		"minioResult": minioResult,
 		"imageName":   imageName,
 		"objectName":  objectName,
@@ -369,32 +352,27 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 
 // Minio And Aws Delete
 func (i image) deleteObject(c *fiber.Ctx, ctx context.Context, bucket, object string, awsDelete bool) error {
-	// Check token
-	if err := service.CheckToken(c); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token")
-	}
-
 	// Check if the bucket exists on Minio
 	if found, _ := i.minioService.BucketExists(ctx, bucket); !found {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Minio!")
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Minio!", "")
 	}
 
 	// Check if the bucket exists on AWS S3 if required
 	if awsDelete && !i.awsService.BucketExists(bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!")
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!", "")
 	}
 
 	// Remove object from Minio
 	if err := i.minioService.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{}); err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
+		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), "")
 	}
 
 	// Remove object from AWS S3 if required
 	if awsDelete {
 		if err := i.awsService.DeleteObjects(bucket, []string{object}); err != nil {
-			return service.Response(c, fiber.StatusInternalServerError, false, err.Error())
+			return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), "")
 		}
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "File Successfully Deleted")
+	return service.Response(c, fiber.StatusOK, true, "File Successfully Deleted", "")
 }
