@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: "Cdn API Documentation"
+  title: "Cdn Documentation"
   description: "This project for hosting your static files. resize feature is available for photos with imagick. your files are kept on minio. optionally you can use backup with aws s3."
   version: "1.2.0"
 components:
@@ -322,7 +322,7 @@ paths:
       tags:
         - "Minio"
       security:
-        - BearerAuth: [ "Authorization" ]
+        - BearerAuth: ["Authorization"]
       responses:
         200:
           description: "Bucket List"
@@ -333,7 +333,7 @@ paths:
       tags:
         - "Minio"
       security:
-        - BearerAuth: [ "Authorization" ]
+        - BearerAuth: ["Authorization"]
       parameters:
         - name: "bucket"
           in: "path"
@@ -353,7 +353,7 @@ paths:
       tags:
         - "Minio"
       security:
-        - BearerAuth: [ "Authorization" ]
+        - BearerAuth: ["Authorization"]
       parameters:
         - name: "bucket"
           in: "path"
@@ -373,7 +373,7 @@ paths:
       tags:
         - "Minio"
       security:
-        - BearerAuth: [ "Authorization" ]
+        - BearerAuth: ["Authorization"]
       parameters:
         - name: "bucket"
           in: "path"
@@ -392,7 +392,7 @@ paths:
       tags:
         - "Aws"
       security:
-        - BearerAuth: [ "Authorization" ]
+        - BearerAuth: ["Authorization"]
       responses:
         200:
           description: "Bucket List"
@@ -403,7 +403,7 @@ paths:
       tags:
         - "Aws"
       security:
-        - BearerAuth: [ "Authorization" ]
+        - BearerAuth: ["Authorization"]
       responses:
         200:
           description: "Vault List"
@@ -414,7 +414,7 @@ paths:
       tags:
         - "Aws"
       security:
-        - BearerAuth: [ "Authorization" ]
+        - BearerAuth: ["Authorization"]
       parameters:
         - name: "bucket"
           in: "path"
