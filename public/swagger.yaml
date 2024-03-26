@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: "Cdn Documentation"
+  title: "Cdn API Documentation"
   description: "This project for hosting your static files. resize feature is available for photos with imagick. your files are kept on minio. optionally you can use backup with aws s3."
   version: "1.2.0"
 components:
