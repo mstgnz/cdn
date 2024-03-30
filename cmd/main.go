@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"strings"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gofiber/fiber/v2"
@@ -114,6 +115,9 @@ func AuthMiddleware(c *fiber.Ctx) error {
 }
 
 // Cross-platform file system notifications for Go.
+// Q: Watching a file doesn't work well
+// A: Watch the parent directory and use Event.Name to filter out files you're not interested in.
+// There is an example of this in cmd/fsnotify/file.go.
 func watchEnvChanges() {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -121,7 +125,7 @@ func watchEnvChanges() {
 	}
 	defer watcher.Close()
 
-	err = watcher.Add(".env")
+	err = watcher.Add("/app")
 	if err != nil {
 		log.Fatalf("Failed to add .env to watcher: %v", err)
 	}
@@ -132,9 +136,16 @@ func watchEnvChanges() {
 			if !ok {
 				return
 			}
-			if event.Has(fsnotify.Write) {
-				log.Println("Detected change in .env file, reloading...")
-				_ = godotenv.Load(".env")
+			if event.Op&fsnotify.Write == fsnotify.Write {
+				if strings.Contains(event.Name, ".env") {
+					log.Println("Detected change in .env file, reloading...")
+					if err = godotenv.Load(".env"); err != nil {
+						log.Println("Load Env Error: ", err)
+					}
+					if err = service.ReadEnvAndSet(); err != nil {
+						log.Println("Read Env Error: ", err)
+					}
+				}
 			}
 		case err, ok := <-watcher.Errors:
 			if !ok {

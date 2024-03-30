@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -24,6 +25,20 @@ const (
 
 func GetEnv(key string) string {
 	return os.Getenv(key)
+}
+
+func ReadEnvAndSet() error {
+	envs, err := godotenv.Read(".env")
+	if err != nil {
+		return err
+	}
+	for k, v := range envs {
+		err := os.Setenv(k, v)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetBool fetches an env var meant to be a bool and follows this logic to
