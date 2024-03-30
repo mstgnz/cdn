@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
@@ -26,6 +27,9 @@ func main() {
 	if err != nil {
 		log.Fatal("Error loading .env file, must be at project root")
 	}
+
+	// watch .env
+	go watchEnvChanges()
 
 	awsService = service.NewAwsService()
 	minioClient = service.MinioClient()
@@ -107,4 +111,36 @@ func AuthMiddleware(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token", nil)
 	}
 	return c.Next()
+}
+
+// Cross-platform file system notifications for Go.
+func watchEnvChanges() {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatalf("Failed to create watcher: %v", err)
+	}
+	defer watcher.Close()
+
+	err = watcher.Add(".env")
+	if err != nil {
+		log.Fatalf("Failed to add .env to watcher: %v", err)
+	}
+
+	for {
+		select {
+		case event, ok := <-watcher.Events:
+			if !ok {
+				return
+			}
+			if event.Has(fsnotify.Write) {
+				log.Println("Detected change in .env file, reloading...")
+				_ = godotenv.Load(".env")
+			}
+		case err, ok := <-watcher.Errors:
+			if !ok {
+				return
+			}
+			log.Println("Error watching .env file:", err)
+		}
+	}
 }
