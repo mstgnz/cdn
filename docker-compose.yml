@@ -9,6 +9,8 @@ services:
     restart: always
     ports:
       - "9090:9090"
+    logging:
+      driver: none
     volumes:
       - ./:/cdn
     depends_on:
