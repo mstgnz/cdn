@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -103,7 +104,8 @@ func main() {
 		return c.SendFile("./public/index.html")
 	})
 
-	log.Fatal(app.Listen(":9090"))
+	port := fmt.Sprintf(":%s", service.GetEnv("APP_PORT"))
+	log.Fatal(app.Listen(port))
 
 }
 

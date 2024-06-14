@@ -216,7 +216,7 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	// Upload with PutObject
 	minioResult, err := i.minioService.PutObject(ctx, bucket, objectName, res.Body, int64(fileSize), minio.PutObjectOptions{ContentType: contentType})
 
-	url = service.GetEnv("PROJECT_ENDPOINT")
+	url = service.GetEnv("APP_URL")
 	url = strings.TrimSuffix(url, "/")
 	link := url + "/" + bucket + "/" + objectName
 
@@ -322,7 +322,7 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
-	url := service.GetEnv("PROJECT_ENDPOINT")
+	url := service.GetEnv("APP_URL")
 	url = strings.TrimSuffix(url, "/")
 	link := url + "/" + bucket + "/" + objectName
 

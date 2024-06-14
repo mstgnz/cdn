@@ -19,8 +19,38 @@ down:
 clean:
 	docker rmi $(docker images -f "dangling=true" -q)
 
-run_api:
-	docker run -d --restart=always -p 8080:9090 --name cdn-golang --network=cdn_cdn cdn-golang bash -c "go build -o CdnApp && ./CdnApp"
+run_api: create_volume create_network
+	docker run -d \
+		-v ./:/app \
+		--restart=always \
+		--name cdn-golang \
+		--log-driver none \
+		--network=$(APP_NAME) \
+		-p $(APP_PORT):$(APP_PORT) \
+		cdn-golang bash -c "go build -o CdnApp && ./CdnApp"
 
-run_minio:
-	docker run -d --restart always -p 9000:9000 -p 9001:9001 --name cdn-minio --volume=minio:/var/lib/minio -e MINIO_ROOT_USER='${MINIO_ROOT_USER}' -e MINIO_ROOT_PASSWORD='${MINIO_ROOT_PASSWORD}' minio/minio server --console-address ":9001" /var/lib/minio
+run_minio: create_network
+	docker run -d \
+		-p 9000:9000 \
+		-p 9001:9001 \
+		--name cdn-minio \
+		--restart always \
+		--network=$(APP_NAME) \
+		--volume=minio:/var/lib/minio \
+		-e MINIO_ROOT_USER='${MINIO_ROOT_USER}' \
+		-e MINIO_ROOT_PASSWORD='${MINIO_ROOT_PASSWORD}' \
+		minio/minio server --console-address ":9001" /var/lib/minio
+
+create_network:
+	@if ! docker network inspect $(APP_NAME) >/dev/null 2>&1; then \
+		docker network create $(APP_NAME); \
+	else \
+		echo "Network '$(APP_NAME)' already exists, using existing network."; \
+	fi
+
+create_volume:
+	@if ! docker volume inspect $(APP_NAME) >/dev/null 2>&1; then \
+		docker volume create $(APP_NAME); \
+	else \
+		echo "Volume '$(APP_NAME)' already exists, skipping creation."; \
+	fi

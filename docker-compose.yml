@@ -8,7 +8,7 @@ services:
     container_name: cdn-golang
     restart: always
     ports:
-      - "9090:9090"
+      - "${APP_PORT}:${APP_PORT}"
     logging:
       driver: none
     volumes:
