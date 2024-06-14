@@ -23,7 +23,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 RUN echo "Installing ImageMagick" && cd && \
-    wget https://download.imagemagick.org/ImageMagick/download/releases/ImageMagick-${IMAGEMAGICK_VERSION}.tar.xz && \
+    wget https://download.imagemagick.org/ImageMagick/download/releases/ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz && \
     tar xvzf ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz && \
     cd ImageMagick* && \
     ./configure \
