@@ -19,7 +19,10 @@ down:
 clean:
 	docker rmi $(docker images -f "dangling=true" -q)
 
-run_api: create_volume create_network
+build_api:
+	docker build -t cdn-golang .
+
+run_api: build_api create_volume create_network
 	docker run -d \
 		-v ./:/app \
 		--restart=always \
