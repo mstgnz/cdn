@@ -29,6 +29,7 @@ run_api: build_api create_volume create_network
 		--name cdn-golang \
 		--log-driver none \
 		--network=$(APP_NAME) \
+		--env-file .env
 		-p $(APP_PORT):$(APP_PORT) \
 		cdn-golang bash -c "go build -o CdnApp && ./CdnApp"
 
@@ -40,8 +41,8 @@ run_minio: create_network
 		--restart always \
 		--network=$(APP_NAME) \
 		--volume=minio:/var/lib/minio \
-		-e MINIO_ROOT_USER='${MINIO_ROOT_USER}' \
-		-e MINIO_ROOT_PASSWORD='${MINIO_ROOT_PASSWORD}' \
+		-e MINIO_ROOT_USER='$(MINIO_ROOT_USER)' \
+		-e MINIO_ROOT_PASSWORD='$(MINIO_ROOT_PASSWORD)' \
 		minio/minio server --console-address ":9001" /var/lib/minio
 
 create_network:
