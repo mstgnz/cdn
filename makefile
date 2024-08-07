@@ -29,7 +29,7 @@ run_api: build_api create_volume create_network
 		--name cdn-golang \
 		--log-driver none \
 		--network=$(APP_NAME) \
-		--env-file .env
+		--env-file .env \
 		-p $(APP_PORT):$(APP_PORT) \
 		cdn-golang bash -c "go build -o CdnApp && ./CdnApp"
 
