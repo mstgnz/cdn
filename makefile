@@ -30,7 +30,7 @@ run_api: build_api create_volume create_network
 		--network=$(APP_NAME) \
 		--env-file .env \
 		-p $(APP_PORT):$(APP_PORT) \
-		cdn-golang bash -c "go build -o CdnApp && ./CdnApp"
+		cdn-golang
 
 run_minio: create_network
 	docker run -d \
