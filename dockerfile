@@ -2,7 +2,7 @@ FROM golang:1.21 as builder
 
 # Ignore APT warnings about not having a TTY
 ENV DEBIAN_FRONTEND=noninteractive \
-    IMAGEMAGICK_VERSION=7.1.1-33
+    IMAGEMAGICK_VERSION=7.1.1-38
 
 RUN apt-get update \
     && apt-get install -y \
