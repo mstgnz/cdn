@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdn-config
+data:
+  # US West Region
+  REGION: us-west1
+  MINIO_ENDPOINT: minio-us-west.example.com
+  REDIS_URL: redis-us-west.example.com
+
+  # Backup and Recovery
+  BACKUP_BUCKET: cdn-backup-bucket
+  BACKUP_REGION: us-east1
+
+  # Performance Tuning
+  MAX_WORKERS: "50"
+  BATCH_SIZE: "100"
+  FLUSH_INTERVAL: "5s"
+
+  # Monitoring
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+  JAEGER_AGENT: jaeger-agent.monitoring:6831
+
+  # Rate Limiting
+  RATE_LIMIT_REQUESTS: "100"
+  RATE_LIMIT_DURATION: "60"

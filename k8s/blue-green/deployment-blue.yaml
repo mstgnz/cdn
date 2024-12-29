@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cdn-blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cdn
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: cdn
+        version: blue
+    spec:
+      containers:
+        - name: cdn
+          image: cdn-service:1.0
+          ports:
+            - containerPort: 9090
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          env:
+            - name: REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: REGION
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: REDIS_URL
+            - name: MINIO_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: MINIO_ENDPOINT

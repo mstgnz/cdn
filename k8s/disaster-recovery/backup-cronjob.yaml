@@ -1,0 +1,69 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cdn-backup
+spec:
+  schedule: "0 */6 * * *" # Every 6 hours
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: backup
+              image: minio/mc
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  # MinIO backup
+                  mc alias set minio http://$MINIO_ENDPOINT $MINIO_ACCESS_KEY $MINIO_SECRET_KEY
+                  mc alias set backup http://$BACKUP_ENDPOINT $BACKUP_ACCESS_KEY $BACKUP_SECRET_KEY
+                  mc mirror --watch minio/cdn-bucket backup/cdn-backup-bucket
+
+                  # Redis backup
+                  redis-cli -h $REDIS_HOST SAVE
+                  mc cp /data/dump.rdb backup/cdn-backup-bucket/redis/
+
+                  # Configuration backup
+                  kubectl get all -A -o yaml > k8s-backup.yaml
+                  mc cp k8s-backup.yaml backup/cdn-backup-bucket/k8s/
+              env:
+                - name: MINIO_ENDPOINT
+                  valueFrom:
+                    configMapKeyRef:
+                      name: cdn-config
+                      key: MINIO_ENDPOINT
+                - name: BACKUP_ENDPOINT
+                  valueFrom:
+                    configMapKeyRef:
+                      name: cdn-config
+                      key: BACKUP_ENDPOINT
+                - name: REDIS_HOST
+                  valueFrom:
+                    configMapKeyRef:
+                      name: cdn-config
+                      key: REDIS_URL
+                - name: MINIO_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdn-secrets
+                      key: MINIO_ACCESS_KEY
+                - name: MINIO_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdn-secrets
+                      key: MINIO_SECRET_KEY
+                - name: BACKUP_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdn-secrets
+                      key: BACKUP_ACCESS_KEY
+                - name: BACKUP_SECRET_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: cdn-secrets
+                      key: BACKUP_SECRET_KEY
+          restartPolicy: OnFailure

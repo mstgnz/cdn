@@ -276,3 +276,212 @@ curl http://localhost:3000/metrics
 - Connection refused: Check if MinIO is running
 - Authentication failed: Verify environment variables
 - Rate limit exceeded: Check client IP and adjust limits if needed 
+
+## Advanced Deployment Strategies
+
+### Blue/Green Deployment
+
+Blue/Green deployment allows zero-downtime updates by running two identical environments.
+
+1. Initial setup:
+```yaml
+# blue-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cdn-blue
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cdn
+      version: blue
+  template:
+    metadata:
+      labels:
+        app: cdn
+        version: blue
+    spec:
+      containers:
+      - name: cdn
+        image: cdn-service:1.0
+        ports:
+        - containerPort: 9090
+```
+
+2. Service configuration:
+```yaml
+# service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: cdn-service
+spec:
+  selector:
+    app: cdn
+    version: blue  # Switch between blue/green
+  ports:
+  - port: 80
+    targetPort: 9090
+```
+
+3. Deployment process:
+```bash
+# Deploy new version (green)
+kubectl apply -f green-deployment.yaml
+
+# Verify green deployment
+kubectl get pods -l version=green
+
+# Switch traffic to green
+kubectl patch service cdn-service -p '{"spec":{"selector":{"version":"green"}}}'
+
+# Remove old version (blue)
+kubectl delete -f blue-deployment.yaml
+```
+
+### Multi-Region Deployment
+
+Configure multiple regions for high availability and lower latency.
+
+1. Regional Kubernetes clusters:
+```bash
+# Create clusters in different regions
+gcloud container clusters create cdn-us-west --region=us-west1
+gcloud container clusters create cdn-eu-west --region=eu-west1
+gcloud container clusters create cdn-asia-east --region=asia-east1
+```
+
+2. Regional configuration:
+```yaml
+# config-us-west.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdn-config
+data:
+  REGION: us-west1
+  MINIO_ENDPOINT: minio-us-west.example.com
+  REDIS_URL: redis-us-west.example.com
+```
+
+3. DNS and Load Balancing:
+```yaml
+# global-lb.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: cdn-global-ingress
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: cdn-global-ip
+spec:
+  rules:
+  - host: cdn.example.com
+    http:
+      paths:
+      - path: /*
+        pathType: ImplementationSpecific
+        backend:
+          service:
+            name: cdn-service
+            port:
+              number: 80
+```
+
+### Disaster Recovery Plan
+
+1. Data Backup Strategy:
+```bash
+# Automated MinIO backup to secondary storage
+mc mirror --watch minio/bucket s3/backup-bucket
+
+# Redis backup
+redis-cli SAVE
+aws s3 cp dump.rdb s3://backup-bucket/redis/
+
+# Configuration backup
+kubectl get all -A -o yaml > k8s-backup.yaml
+```
+
+2. Recovery Time Objectives (RTO):
+- Critical services: < 1 hour
+- Non-critical services: < 4 hours
+
+3. Recovery Point Objectives (RPO):
+- Storage data: < 5 minutes
+- Cache data: < 1 minute
+
+4. Recovery Steps:
+
+a. Infrastructure Failure:
+```bash
+# Switch to backup region
+kubectl config use-context backup-cluster
+
+# Restore configurations
+kubectl apply -f k8s-backup.yaml
+
+# Verify services
+kubectl get pods,svc
+```
+
+b. Data Corruption:
+```bash
+# Stop affected services
+kubectl scale deployment cdn-service --replicas=0
+
+# Restore from backup
+mc mirror s3/backup-bucket minio/bucket
+
+# Restore Redis data
+aws s3 cp s3://backup-bucket/redis/dump.rdb .
+kubectl cp dump.rdb redis-0:/data/
+
+# Restart services
+kubectl scale deployment cdn-service --replicas=3
+```
+
+5. Regular Testing:
+```bash
+# Monthly DR test schedule
+0 0 1 * * /scripts/dr-test.sh
+
+# Backup verification
+0 0 * * * /scripts/verify-backups.sh
+```
+
+### Monitoring and Alerts
+
+1. Regional health checks:
+```yaml
+# prometheus-rules.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cdn-alerts
+spec:
+  groups:
+  - name: cdn.rules
+    rules:
+    - alert: RegionUnhealthy
+      expr: cdn_region_health < 1
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        description: "Region {{ $labels.region }} is unhealthy"
+```
+
+2. Failover triggers:
+```yaml
+# failover-policy.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cdn-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: cdn
+``` 
