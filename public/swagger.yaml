@@ -48,11 +48,45 @@ components:
           type: string
           format: date-time
 
+    UploadResponse:
+      type: object
+      properties:
+        status:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+          properties:
+            minioUpload:
+              type: string
+              description: Minio upload status with size information
+            minioResult:
+              type: object
+              description: Detailed result from Minio upload
+            awsUpload:
+              type: string
+              description: AWS upload status (empty if not used)
+            awsResult:
+              type: string
+              description: Detailed result from AWS upload (empty if not used)
+            imageName:
+              type: string
+              description: Generated name of the uploaded file
+            objectName:
+              type: string
+              description: Full path of the uploaded file
+            link:
+              type: string
+              description: Public URL to access the file
+
 paths:
   /health:
     get:
       summary: Health check endpoint
       description: Returns the health status of all services
+      tags:
+        - health
       responses:
         "200":
           description: Health check results
@@ -71,6 +105,8 @@ paths:
     get:
       summary: Prometheus metrics endpoint
       description: Returns Prometheus format metrics
+      tags:
+        - health
       responses:
         "200":
           description: Metrics in Prometheus format
@@ -82,6 +118,8 @@ paths:
   /{bucket}/{path}:
     get:
       summary: Get original image
+      tags:
+        - image
       parameters:
         - name: bucket
           in: path
@@ -111,6 +149,8 @@ paths:
   /{bucket}/w:{width}/{path}:
     get:
       summary: Get image with specific width
+      tags:
+        - image
       parameters:
         - name: bucket
           in: path
@@ -139,6 +179,8 @@ paths:
   /{bucket}/h:{height}/{path}:
     get:
       summary: Get image with specific height
+      tags:
+        - image
       parameters:
         - name: bucket
           in: path
@@ -167,6 +209,8 @@ paths:
   /{bucket}/w:{width}/h:{height}/{path}:
     get:
       summary: Get image with specific dimensions
+      tags:
+        - image
       parameters:
         - name: bucket
           in: path
@@ -200,6 +244,8 @@ paths:
   /upload:
     post:
       summary: Upload image
+      tags:
+        - image
       security:
         - BearerAuth: []
       requestBody:
@@ -219,52 +265,20 @@ paths:
                   type: integer
                 height:
                   type: integer
+                aws_upload:
+                  type: boolean
               required:
                 - file
                 - bucket
       responses:
-        "200":
+        "201":
           description: Upload successful
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: boolean
-                  message:
-                    type: string
-                  data:
-                    type: object
-
-  /upload-with-aws:
-    post:
-      summary: Upload image with AWS backup
-      security:
-        - BearerAuth: []
-      requestBody:
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                bucket:
-                  type: string
-                path:
-                  type: string
-                width:
-                  type: integer
-                height:
-                  type: integer
-              required:
-                - file
-                - bucket
-      responses:
-        "200":
-          description: Upload successful with AWS backup
+                $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: Bad request
           content:
             application/json:
               schema:
@@ -272,28 +286,43 @@ paths:
 
   /upload-url:
     post:
-      summary: Upload image from URL
+      summary: Upload file from URL
+      tags:
+        - image
       security:
         - BearerAuth: []
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - bucket
+                - url
               properties:
-                url:
-                  type: string
-                  format: uri
-                bucket:
-                  type: string
+                aws_upload:
+                  type: boolean
+                  description: Upload to AWS S3
                 path:
                   type: string
-              required:
-                - url
-                - bucket
+                  description: Optional path prefix for the file
+                bucket:
+                  type: string
+                  description: Target bucket name
+                url:
+                  type: string
+                  format: url
+                  description: Source URL of the file to upload
       responses:
-        "200":
-          description: URL upload successful
+        "201":
+          description: Upload successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: Bad request
           content:
             application/json:
               schema:
@@ -302,6 +331,8 @@ paths:
   /resize:
     post:
       summary: Resize existing image
+      tags:
+        - image
       security:
         - BearerAuth: []
       requestBody:
@@ -331,6 +362,8 @@ paths:
   /{bucket}/*:
     delete:
       summary: Delete image
+      tags:
+        - image
       security:
         - BearerAuth: []
       parameters:
@@ -339,6 +372,11 @@ paths:
           required: true
           schema:
             type: string
+        - name: aws_delete
+          in: query
+          required: false
+          schema:
+            type: boolean
       responses:
         "200":
           description: Delete successful
@@ -347,28 +385,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
-  /with-aws/{bucket}/*:
-    delete:
-      summary: Delete image from both MinIO and AWS
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: bucket
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Delete successful from both storages
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Error"
-
   /aws/bucket-list:
     get:
       summary: List AWS buckets
+      tags:
+        - aws
       security:
         - BearerAuth: []
       responses:
@@ -390,6 +411,8 @@ paths:
   /aws/{bucket}/exists:
     get:
       summary: Check if AWS bucket exists
+      tags:
+        - aws
       security:
         - BearerAuth: []
       parameters:
@@ -412,6 +435,8 @@ paths:
   /aws/vault-list:
     get:
       summary: List AWS Glacier vaults
+      tags:
+        - aws
       security:
         - BearerAuth: []
       responses:
@@ -433,6 +458,8 @@ paths:
   /minio/bucket-list:
     get:
       summary: List MinIO buckets
+      tags:
+        - minio
       security:
         - BearerAuth: []
       responses:
@@ -454,6 +481,8 @@ paths:
   /minio/{bucket}/exists:
     get:
       summary: Check if MinIO bucket exists
+      tags:
+        - minio
       security:
         - BearerAuth: []
       parameters:
@@ -476,6 +505,8 @@ paths:
   /minio/{bucket}/create:
     get:
       summary: Create MinIO bucket
+      tags:
+        - minio
       security:
         - BearerAuth: []
       parameters:
@@ -495,6 +526,8 @@ paths:
   /minio/{bucket}/delete:
     get:
       summary: Delete MinIO bucket
+      tags:
+        - minio
       security:
         - BearerAuth: []
       parameters:
