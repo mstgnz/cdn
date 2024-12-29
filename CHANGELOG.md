@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
 - Worker pool implementation for concurrent processing
 - Health check endpoint with detailed status
 - Prometheus metrics integration
+- Circuit breaker pattern implementation:
+  - Automatic failure detection and recovery
+  - Configurable thresholds and timeouts
+  - State monitoring via Prometheus metrics
+  - Integration with AWS and storage services
 - New batch operations endpoints:
   - `/batch/upload` for multiple file uploads
   - `/batch/delete` for multiple file deletions

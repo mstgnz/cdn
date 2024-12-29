@@ -25,6 +25,12 @@ A high-performance Content Delivery Network (CDN) service built with Go, featuri
 - Rate limiting and request throttling
 - Performance metrics and monitoring
 - Dynamic ImageMagick version management
+- Circuit breaker pattern for fault tolerance
+  - Automatic failure detection
+  - Graceful service degradation
+  - Self-healing capabilities
+  - Configurable thresholds and timeouts
+  - Real-time state monitoring
 
 ### Security
 - Token-based authentication

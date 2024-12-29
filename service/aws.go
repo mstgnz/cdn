@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/mstgnz/cdn/pkg/circuitbreaker"
 	cnf "github.com/mstgnz/cdn/pkg/config"
 )
 
@@ -31,12 +33,25 @@ type AwsService interface {
 
 type awsService struct {
 	cfg aws.Config
+	cb  *circuitbreaker.CircuitBreaker
 }
 
 func NewAwsService() AwsService {
 	cfg, _ := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(
 		credentials.NewStaticCredentialsProvider(cnf.GetEnvOrDefault("AWS_ACCESS_KEY_ID", ""), cnf.GetEnvOrDefault("AWS_SECRET_ACCESS_KEY", ""), "")))
-	return &awsService{cfg: cfg}
+
+	cb := circuitbreaker.NewCircuitBreaker(
+		"aws-service",
+		5,              // 5 failures to open
+		3,              // 3 successes to close
+		10*time.Second, // 10 second timeout
+		100,            // max 100 concurrent requests
+	)
+
+	return &awsService{
+		cfg: cfg,
+		cb:  cb,
+	}
 }
 
 func (as *awsService) S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error) {

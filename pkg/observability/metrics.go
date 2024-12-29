@@ -140,24 +140,16 @@ var (
 	CacheOperations = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "cache_operations_total",
-			Help: "Total number of cache operations",
+			Help: "The total number of cache operations",
 		},
 		[]string{"operation", "status"},
-	)
-
-	CacheHitRatio = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "cache_hit_ratio",
-			Help: "Cache hit ratio for different operations",
-		},
-		[]string{"operation"},
 	)
 
 	CacheOperationDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "cache_operation_duration_seconds",
 			Help:    "Duration of cache operations in seconds",
-			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5},
+			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"operation", "status"},
 	)
@@ -165,9 +157,50 @@ var (
 	CacheSize = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "cache_size_bytes",
-			Help: "Size of cached data in bytes",
+			Help: "Current size of cached data in bytes",
 		},
 		[]string{"type"},
+	)
+
+	CacheHitRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "cache_hit_ratio",
+			Help: "Cache hit ratio",
+		},
+		[]string{"operation"},
+	)
+
+	// Circuit Breaker metrics
+	CircuitBreakerState = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "circuit_breaker_state",
+			Help: "Current state of circuit breaker (0: Closed, 1: Open, 2: Half-Open)",
+		},
+		[]string{"name"},
+	)
+
+	CircuitBreakerFailures = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "circuit_breaker_failures",
+			Help: "Number of consecutive failures in circuit breaker",
+		},
+		[]string{"name"},
+	)
+
+	CircuitBreakerSuccesses = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "circuit_breaker_successes",
+			Help: "Number of consecutive successes in circuit breaker",
+		},
+		[]string{"name"},
+	)
+
+	CircuitBreakerRequests = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "circuit_breaker_requests_total",
+			Help: "Total number of requests handled by circuit breaker",
+		},
+		[]string{"name", "result"},
 	)
 )
 
