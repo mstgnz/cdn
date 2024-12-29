@@ -54,11 +54,16 @@ type ImageProcessRequest struct {
 
 func NewImage(minioClient *minio.Client, awsService service.AwsService) Image {
 	// Initialize worker pool with 5 workers
-	wp := worker.NewPool(5)
+	workerConfig := worker.DefaultConfig()
+	workerConfig.Workers = 5
+	wp := worker.NewPool(workerConfig)
 	wp.Start()
 
-	// Initialize batch processor with size 10 and 5 second timeout
-	bp := batch.NewBatchProcessor(10, 5*time.Second, processBatch)
+	// Initialize batch processor with default config
+	batchConfig := batch.DefaultConfig()
+	batchConfig.BatchSize = 10
+	batchConfig.FlushTimeout = 5 * time.Second
+	bp := batch.NewBatchProcessor(batchConfig, processBatch)
 	bp.Start()
 
 	// Initialize cache service
