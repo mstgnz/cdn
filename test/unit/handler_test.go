@@ -89,8 +89,9 @@ func TestUploadImage(t *testing.T) {
 	app := fiber.New()
 	mockMinio := setupMockMinio()
 	mockAws := &MockAwsService{}
+	mockImageService := &service.ImageService{}
 
-	imageHandler := handler.NewImage(mockMinio, mockAws)
+	imageHandler := handler.NewImage(mockMinio, mockAws, mockImageService)
 	app.Post("/upload", imageHandler.UploadImage)
 
 	// Test cases

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"reflect"
 	"strconv"
 	"testing"
 
@@ -9,27 +8,6 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/service"
 )
-
-func TestNewImage(t *testing.T) {
-	type args struct {
-		minioService *minio.Client
-		awsService   service.AwsService
-	}
-	tests := []struct {
-		args args
-		want Image
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			if got := NewImage(tt.args.minioService, tt.args.awsService); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewImage() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 func Test_image_DeleteImage(t *testing.T) {
 	type fields struct {

@@ -49,6 +49,9 @@ func main() {
 
 	awsService = service.NewAwsService()
 	minioClient = service.MinioClient()
+	imageService := &service.ImageService{
+		MinioClient: minioClient,
+	}
 
 	// Initialize cache service
 	cacheService, err := service.NewCacheService("")
@@ -56,7 +59,7 @@ func main() {
 		logger.Fatal().Err(err).Msg("Failed to initialize cache service")
 	}
 
-	imageHandler = handler.NewImage(minioClient, awsService)
+	imageHandler = handler.NewImage(minioClient, awsService, imageService)
 	awsHandler = handler.NewAwsHandler(awsService)
 	minioHandler = handler.NewMinioHandler(minioClient)
 

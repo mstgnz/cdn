@@ -38,11 +38,12 @@ type Image interface {
 }
 
 type image struct {
-	minioClient *minio.Client
-	awsService  service.AwsService
-	workerPool  *worker.Pool
-	batchProc   *batch.BatchProcessor
-	cache       service.CacheService
+	minioClient  *minio.Client
+	awsService   service.AwsService
+	imageService *service.ImageService
+	workerPool   *worker.Pool
+	batchProc    *batch.BatchProcessor
+	cache        service.CacheService
 }
 
 // ImageProcessRequest represents an image processing request
@@ -62,18 +63,26 @@ type UploadUrlRequest struct {
 	AWSUpload bool   `json:"aws_upload"`
 }
 
-func NewImage(minioClient *minio.Client, awsService service.AwsService) Image {
+func NewImage(minioClient *minio.Client, awsService service.AwsService, imageService *service.ImageService) Image {
 	// Initialize worker pool with 5 workers
 	workerConfig := worker.DefaultConfig()
 	workerConfig.Workers = 5
 	wp := worker.NewPool(workerConfig)
 	wp.Start()
 
+	img := &image{
+		minioClient:  minioClient,
+		awsService:   awsService,
+		imageService: imageService,
+		workerPool:   wp,
+		cache:        nil,
+	}
+
 	// Initialize batch processor with default config
 	batchConfig := batch.DefaultConfig()
 	batchConfig.BatchSize = 10
 	batchConfig.FlushTimeout = 5 * time.Second
-	bp := batch.NewBatchProcessor(batchConfig, processBatch)
+	bp := batch.NewBatchProcessor(batchConfig, img.processBatch)
 	bp.Start()
 
 	// Initialize cache service
@@ -81,37 +90,10 @@ func NewImage(minioClient *minio.Client, awsService service.AwsService) Image {
 	if err != nil {
 		log.Printf("Failed to initialize cache service: %v", err)
 	}
+	img.cache = cacheService
+	img.batchProc = bp
 
-	return &image{
-		minioClient: minioClient,
-		awsService:  awsService,
-		workerPool:  wp,
-		batchProc:   bp,
-		cache:       cacheService,
-	}
-}
-
-// processBatch handles batch processing of items
-func processBatch(items []batch.BatchItem) []batch.BatchItem {
-	// Process items in parallel using goroutines
-	var wg sync.WaitGroup
-	for i := range items {
-		wg.Add(1)
-		go func(item *batch.BatchItem) {
-			defer wg.Done()
-
-			// Process the item based on its type
-			switch data := item.Data.(type) {
-			case *ImageProcessRequest:
-				// Process image
-				err := processImage(data)
-				item.Error = err
-				item.Success = err == nil
-			}
-		}(&items[i])
-	}
-	wg.Wait()
-	return items
+	return img
 }
 
 func (i image) GetImage(c *fiber.Ctx) error {
@@ -150,7 +132,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		return c.SendFile("./public/notfound.png")
 	}
 
-	if err, orjWidth, orjHeight := service.ImagickGetWidthHeight(getByte); err == nil {
+	if err, orjWidth, orjHeight := i.imageService.ImagickGetWidthHeight(getByte); err == nil {
 		c.Set("Width", strconv.Itoa(int(orjWidth)))
 		c.Set("Height", strconv.Itoa(int(orjHeight)))
 	}
@@ -158,7 +140,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	c.Set("Content-Type", http.DetectContentType(getByte))
 
 	if resize {
-		resizedImage := service.ImagickResize(getByte, width, height)
+		resizedImage := i.imageService.ImagickResize(getByte, width, height)
 		// Cache the resized image
 		if err := i.cache.SetResizedImage(bucket, objectName, width, height, resizedImage); err != nil {
 			log.Printf("Failed to cache resized image: %v", err)
@@ -254,7 +236,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 			orjWidth  uint
 			orjHeight uint
 		)
-		if err, orjWidth, orjHeight = service.ImagickGetWidthHeight(fileContent); err == nil {
+		if err, orjWidth, orjHeight = i.imageService.ImagickGetWidthHeight(fileContent); err == nil {
 			c.Set("Width", strconv.Itoa(int(orjWidth)))
 			c.Set("Height", strconv.Itoa(int(orjHeight)))
 		}
@@ -263,7 +245,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
 		if resize && orjWidth > 0 && orjHeight > 0 {
 			width, height = service.RatioWidthHeight(orjWidth, orjHeight, width, height)
-			fileContent = service.ImagickResize(fileContent, width, height)
+			fileContent = i.imageService.ImagickResize(fileContent, width, height)
 			if tempFile, err := service.CreateFile(fileContent); err == nil {
 				defer func() {
 					_ = tempFile.Close()
@@ -497,7 +479,7 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 				ContentType: file.Header.Get("Content-Type"),
 				Filename:    file.Filename,
 			}
-			return processImage(req)
+			return processImage(req, i)
 		},
 		Response: respChan,
 	}
@@ -512,10 +494,33 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 	return service.Response(c, fiber.StatusOK, true, "Image processed successfully", nil)
 }
 
+// processBatch handles batch processing of items
+func (i *image) processBatch(items []batch.BatchItem) []batch.BatchItem {
+	// Process items in parallel using goroutines
+	var wg sync.WaitGroup
+	for idx := range items {
+		wg.Add(1)
+		go func(item *batch.BatchItem) {
+			defer wg.Done()
+
+			// Process the item based on its type
+			switch data := item.Data.(type) {
+			case *ImageProcessRequest:
+				// Process image
+				err := processImage(data, i)
+				item.Error = err
+				item.Success = err == nil
+			}
+		}(&items[idx])
+	}
+	wg.Wait()
+	return items
+}
+
 // processImage handles the actual image processing
-func processImage(req *ImageProcessRequest) error {
+func processImage(req *ImageProcessRequest, i *image) error {
 	if service.IsImageFile(req.Filename) {
-		resized := service.ImagickResize(req.File, req.Width, req.Height)
+		resized := i.imageService.ImagickResize(req.File, req.Width, req.Height)
 		if resized == nil {
 			return fmt.Errorf("image processing failed")
 		}
