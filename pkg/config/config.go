@@ -96,7 +96,7 @@ func Load() (*Config, error) {
 
 	// Redis Config
 	config.Redis = RedisConfig{
-		URL: getEnvOrDefault("REDIS_URL", "redis://localhost:6379"),
+		URL: getEnvOrDefault("REDIS_URL", mustGetEnv("REDIS_URL")),
 	}
 
 	// Worker Config
