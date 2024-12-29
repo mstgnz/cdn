@@ -22,6 +22,7 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/pkg/batch"
 	"github.com/mstgnz/cdn/pkg/config"
+	"github.com/mstgnz/cdn/pkg/validator"
 	"github.com/mstgnz/cdn/pkg/worker"
 	"github.com/mstgnz/cdn/service"
 )
@@ -339,6 +340,16 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 		}
 	}
 
+	// Validate file
+	if err := validator.ValidateFile(file); err != nil {
+		if valErr, ok := err.(*validator.FileValidationError); ok {
+			return service.Response(c, fiber.StatusBadRequest, false, valErr.Message, map[string]string{
+				"code": valErr.Code,
+			})
+		}
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+	}
+
 	// Check if the AWS bucket exists if required
 	if awsUpload && !i.awsService.BucketExists(bucket) {
 		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!", nil)
@@ -372,6 +383,16 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 
 	// size
 	if fileContent, err := io.ReadAll(fileBuffer); err == nil {
+		// Validate file content
+		if err := validator.ValidateFileContent(fileContent); err != nil {
+			if valErr, ok := err.(*validator.FileValidationError); ok {
+				return service.Response(c, fiber.StatusBadRequest, false, valErr.Message, map[string]string{
+					"code": valErr.Code,
+				})
+			}
+			return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		}
+
 		_, _ = fileBuffer.Seek(0, 0)
 		fileSize = int64(len(fileContent))
 		contentType = http.DetectContentType(fileContent)
@@ -418,9 +439,7 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 
 	// S3 Upload
 	if awsUpload {
-
 		awsResult := "S3 Successfully Uploaded"
-
 		if _, err = i.awsService.S3PutObject(bucket, objectName, fileBuffer); err != nil {
 			awsResult = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
 		}
