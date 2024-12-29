@@ -34,9 +34,11 @@ func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
 	cacheHealth := h.checkCacheHealth(ctx)
 
 	overallStatus := "healthy"
+	statusCode := fiber.StatusOK
+
 	if minioHealth != "healthy" || awsHealth != "healthy" || cacheHealth != "healthy" {
 		overallStatus = "degraded"
-		c.Status(fiber.StatusServiceUnavailable)
+		statusCode = fiber.StatusServiceUnavailable
 	}
 
 	status := map[string]any{
@@ -49,7 +51,7 @@ func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
 		"timestamp": time.Now().UTC(),
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "Health check", status)
+	return service.Response(c, statusCode, true, "Health check", status)
 }
 
 func (h *HealthChecker) checkMinioHealth(ctx context.Context) string {
