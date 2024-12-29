@@ -35,6 +35,8 @@ type Image interface {
 	DeleteImage(c *fiber.Ctx) error
 	ResizeImage(c *fiber.Ctx) error
 	UploadWithUrl(c *fiber.Ctx) error
+	BatchUpload(c *fiber.Ctx) error
+	BatchDelete(c *fiber.Ctx) error
 }
 
 type image struct {
@@ -61,6 +63,21 @@ type UploadUrlRequest struct {
 	Bucket    string `json:"bucket" validate:"required"`
 	URL       string `json:"url" validate:"required,url"`
 	AWSUpload bool   `json:"aws_upload"`
+}
+
+// BatchUploadRequest represents the request body for batch uploads
+type BatchUploadRequest struct {
+	Bucket    string   `json:"bucket" validate:"required"`
+	Path      string   `json:"path"`
+	Files     []string `json:"files" validate:"required,min=1"`
+	AWSUpload bool     `json:"aws_upload"`
+}
+
+// BatchDeleteRequest represents the request body for batch deletions
+type BatchDeleteRequest struct {
+	Bucket    string   `json:"bucket" validate:"required"`
+	Files     []string `json:"files" validate:"required,min=1"`
+	AWSDelete bool     `json:"aws_delete"`
 }
 
 func NewImage(minioClient *minio.Client, awsService service.AwsService, imageService *service.ImageService) Image {
@@ -527,4 +544,192 @@ func processImage(req *ImageProcessRequest, i *image) error {
 		return nil
 	}
 	return nil
+}
+
+// BatchUpload handles multiple file uploads
+func (i *image) BatchUpload(c *fiber.Ctx) error {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid form data", nil)
+	}
+
+	bucket := form.Value["bucket"]
+	if len(bucket) == 0 {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
+	}
+
+	path := form.Value["path"]
+	pathPrefix := ""
+	if len(path) > 0 {
+		pathPrefix = path[0]
+	}
+
+	awsUpload := form.Value["aws_upload"] != nil && form.Value["aws_upload"][0] == "true"
+
+	// Check bucket existence
+	exists, err := i.minioClient.BucketExists(context.Background(), bucket[0])
+	if err != nil || !exists {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket not found", nil)
+	}
+
+	// Check AWS bucket if needed
+	if awsUpload && !i.awsService.BucketExists(bucket[0]) {
+		return service.Response(c, fiber.StatusBadRequest, false, "AWS bucket not found", nil)
+	}
+
+	files := form.File["files"]
+	if len(files) == 0 {
+		return service.Response(c, fiber.StatusBadRequest, false, "No files provided", nil)
+	}
+
+	results := make([]map[string]interface{}, 0)
+	var wg sync.WaitGroup
+	resultChan := make(chan map[string]interface{}, len(files))
+
+	for _, file := range files {
+		wg.Add(1)
+		go func(file *multipart.FileHeader) {
+			defer wg.Done()
+
+			result := make(map[string]interface{})
+			result["filename"] = file.Filename
+
+			// Validate file
+			if err := validator.ValidateFile(file); err != nil {
+				result["success"] = false
+				result["error"] = err.Error()
+				resultChan <- result
+				return
+			}
+
+			// Process and upload file
+			fileContent, err := file.Open()
+			if err != nil {
+				result["success"] = false
+				result["error"] = err.Error()
+				resultChan <- result
+				return
+			}
+			defer fileContent.Close()
+
+			// Generate object name
+			objectName := service.RandomName(10) + "_" + file.Filename
+			if pathPrefix != "" {
+				objectName = pathPrefix + "/" + objectName
+			}
+
+			// Upload to MinIO
+			contentType := file.Header.Get("Content-Type")
+			_, err = i.minioClient.PutObject(
+				context.Background(),
+				bucket[0],
+				objectName,
+				fileContent,
+				file.Size,
+				minio.PutObjectOptions{ContentType: contentType},
+			)
+
+			if err != nil {
+				result["success"] = false
+				result["error"] = err.Error()
+				resultChan <- result
+				return
+			}
+
+			// Upload to AWS if requested
+			if awsUpload {
+				fileContent.Seek(0, 0)
+				_, err = i.awsService.S3PutObject(bucket[0], objectName, fileContent)
+				if err != nil {
+					result["aws_error"] = err.Error()
+				}
+			}
+
+			result["success"] = true
+			result["object_name"] = objectName
+			resultChan <- result
+		}(file)
+	}
+
+	// Wait for all uploads to complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results
+	for result := range resultChan {
+		results = append(results, result)
+	}
+
+	return service.Response(c, fiber.StatusOK, true, "Batch upload completed", results)
+}
+
+// BatchDelete handles multiple file deletions
+func (i *image) BatchDelete(c *fiber.Ctx) error {
+	var req BatchDeleteRequest
+	if err := c.BodyParser(&req); err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, "Invalid request body", nil)
+	}
+
+	if err := validator.ValidateStruct(req); err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+	}
+
+	// Check bucket existence
+	exists, err := i.minioClient.BucketExists(context.Background(), req.Bucket)
+	if err != nil || !exists {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket not found", nil)
+	}
+
+	// Check AWS bucket if needed
+	if req.AWSDelete && !i.awsService.BucketExists(req.Bucket) {
+		return service.Response(c, fiber.StatusBadRequest, false, "AWS bucket not found", nil)
+	}
+
+	results := make([]map[string]interface{}, 0)
+	var wg sync.WaitGroup
+	resultChan := make(chan map[string]interface{}, len(req.Files))
+
+	for _, file := range req.Files {
+		wg.Add(1)
+		go func(filename string) {
+			defer wg.Done()
+
+			result := make(map[string]interface{})
+			result["filename"] = filename
+
+			// Delete from MinIO
+			err := i.minioClient.RemoveObject(context.Background(), req.Bucket, filename, minio.RemoveObjectOptions{})
+			if err != nil {
+				result["success"] = false
+				result["error"] = err.Error()
+				resultChan <- result
+				return
+			}
+
+			// Delete from AWS if requested
+			if req.AWSDelete {
+				if err := i.awsService.DeleteObjects(req.Bucket, []string{filename}); err != nil {
+					result["aws_error"] = err.Error()
+				}
+			}
+
+			result["success"] = true
+			resultChan <- result
+		}(file)
+	}
+
+	// Wait for all deletions to complete
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results
+	for result := range resultChan {
+		results = append(results, result)
+	}
+
+	return service.Response(c, fiber.StatusOK, true, "Batch delete completed", results)
 }

@@ -136,6 +136,8 @@ func main() {
 		uploadGroup.Use(middleware.NewAdvancedRateLimiter(10, time.Minute))
 		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
 		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadWithUrl)
+		uploadGroup.Post("/batch/upload", AuthMiddleware, imageHandler.BatchUpload)
+		uploadGroup.Post("/batch/delete", AuthMiddleware, imageHandler.BatchDelete)
 	}
 
 	// Index

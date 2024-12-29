@@ -11,6 +11,10 @@ All notable changes to this project will be documented in this file.
 - Worker pool implementation for concurrent processing
 - Health check endpoint with detailed status
 - Prometheus metrics integration
+- New batch operations endpoints:
+  - `/batch/upload` for multiple file uploads
+  - `/batch/delete` for multiple file deletions
+- AWS operations made optional via `aws_upload` parameter
 
 ### Changed
 - Refactored image processing service for better reliability
@@ -18,6 +22,8 @@ All notable changes to this project will be documented in this file.
 - Updated logging system with structured logs
 - Improved request validation
 - Optimized cache invalidation strategy
+- AWS S3 operations now controlled by request parameters
+- Standardized response format for batch operations
 
 ### Fixed
 - Memory leak in image processing operations
@@ -25,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - Cache invalidation race conditions
 - File type validation security issues
 - Error handling in batch operations
+- AWS upload parameter handling
 
 ## [1.2.0] - 2023-12-01
 ### Added
