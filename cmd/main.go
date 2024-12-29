@@ -124,10 +124,10 @@ func main() {
 		return c.SendFile("./public/index.html")
 	})
 
-	// Prometheus middleware'ini ekle
+	// Prometheus middleware
 	app.Use(observability.PrometheusMiddleware())
 
-	// Metrics endpoint'i
+	// Metrics endpoint
 	app.Get("/metrics", observability.MetricsHandler)
 
 	port := fmt.Sprintf(":%s", service.GetEnv("APP_PORT"))
