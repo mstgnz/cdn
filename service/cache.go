@@ -19,6 +19,7 @@ type CacheService interface {
 	GetResizedImage(bucket, path string, width, height uint) ([]byte, error)
 	SetResizedImage(bucket, path string, width, height uint, data []byte) error
 	FlushAll() error
+	Close() error
 }
 
 type redisCache struct {
@@ -178,5 +179,27 @@ func (c *redisCache) FlushAll() error {
 	}()
 
 	err = c.client.FlushAll(ctx).Err()
+	return err
+}
+
+func (c *redisCache) Close() error {
+	start := time.Now()
+	var err error
+
+	defer func() {
+		duration := time.Since(start).Seconds()
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		observability.CacheOperations.WithLabelValues("close", status).Inc()
+		observability.CacheOperationDuration.WithLabelValues("close", status).Observe(duration)
+
+		if err != nil {
+			c.logger.Error().Err(err).Msg("Cache close failed")
+		}
+	}()
+
+	err = c.client.Close()
 	return err
 }

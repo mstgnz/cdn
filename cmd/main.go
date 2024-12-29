@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -34,6 +38,10 @@ func main() {
 	observability.InitLogger()
 	logger := observability.Logger()
 
+	// Context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Tracer
 	cleanup, initErr := observability.InitTracer("cdn-service", "http://localhost:14268/api/traces")
 	if initErr != nil {
@@ -47,7 +55,8 @@ func main() {
 	}
 
 	// watch .env
-	go watchEnvChanges()
+	envWatcher := make(chan bool)
+	go watchEnvChanges(ctx, envWatcher)
 
 	awsService = service.NewAwsService()
 	minioClient = service.MinioClient()
@@ -70,6 +79,11 @@ func main() {
 
 	app := fiber.New(fiber.Config{
 		BodyLimit: 25 * 1024 * 2014,
+		// Enable graceful shutdown
+		DisableStartupMessage: true,
+		IdleTimeout:           5 * time.Second,
+		ReadTimeout:           10 * time.Second,
+		WriteTimeout:          10 * time.Second,
 	})
 
 	// Global rate limiter - 100 requests per minute with IP + Token based protection
@@ -159,7 +173,7 @@ func main() {
 		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
 		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadWithUrl)
 		uploadGroup.Post("/batch/upload", AuthMiddleware, imageHandler.BatchUpload)
-		uploadGroup.Post("/batch/delete", AuthMiddleware, imageHandler.BatchDelete)
+		uploadGroup.Delete("/batch/delete", AuthMiddleware, imageHandler.BatchDelete)
 	}
 
 	// Index
@@ -167,10 +181,47 @@ func main() {
 		return c.SendFile("./public/index.html")
 	})
 
-	port := fmt.Sprintf(":%s", config.GetEnvOrDefault("APP_PORT", "9090"))
-	if err := app.Listen(port); err != nil {
-		logger.Fatal().Err(err).Msg("Failed to start server")
+	// Graceful shutdown setup
+	shutdownChan := make(chan os.Signal, 1)
+	signal.Notify(shutdownChan, os.Interrupt, syscall.SIGTERM)
+
+	// Start server in a goroutine
+	go func() {
+		port := fmt.Sprintf(":%s", config.GetEnvOrDefault("APP_PORT", "9090"))
+		if err := app.Listen(port); err != nil {
+			if err.Error() != "server closed" {
+				logger.Fatal().Err(err).Msg("Failed to start server")
+			}
+		}
+	}()
+
+	logger.Info().Msg("Server started successfully")
+
+	// Wait for shutdown signal
+	<-shutdownChan
+	logger.Info().Msg("Shutting down server...")
+
+	// Cancel context to stop background tasks
+	cancel()
+
+	// Stop env watcher
+	envWatcher <- true
+
+	// Shutdown with timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	// Perform cleanup
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+		logger.Error().Err(err).Msg("Server shutdown failed")
 	}
+
+	// Close other connections
+	if err := cacheService.Close(); err != nil {
+		logger.Error().Err(err).Msg("Cache service shutdown failed")
+	}
+
+	logger.Info().Msg("Server gracefully stopped")
 }
 
 func AuthMiddleware(c *fiber.Ctx) error {
@@ -180,11 +231,8 @@ func AuthMiddleware(c *fiber.Ctx) error {
 	return c.Next()
 }
 
-// Cross-platform file system notifications for Go.
-// Q: Watching a file doesn't work well
-// A: Watch the parent directory and use Event.Name to filter out files you're not interested in.
-// There is an example of this in cmd/fsnotify/file.go.
-func watchEnvChanges() {
+// watchEnvChanges monitors .env file changes with context support
+func watchEnvChanges(ctx context.Context, done chan bool) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Fatalf("Failed to create watcher: %v", err)
@@ -198,6 +246,10 @@ func watchEnvChanges() {
 
 	for {
 		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
 		case event, ok := <-watcher.Events:
 			if !ok {
 				return

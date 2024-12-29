@@ -199,6 +199,16 @@ paths:
                 path:
                   type: string
                   description: Target directory path (optional)
+                aws_upload:
+                  type: boolean
+                  description: Whether to upload to AWS S3 as well
+                  default: false
+                height:
+                  type: integer
+                  description: Target height in pixels
+                width:
+                  type: integer
+                  description: Target width in pixels
       responses:
         "200":
           description: Successful upload
@@ -245,6 +255,19 @@ paths:
                 bucket:
                   type: string
                   description: Target bucket name
+                path:
+                  type: string
+                  description: Target directory path (optional)
+                aws_upload:
+                  type: boolean
+                  description: Whether to upload to AWS S3 as well
+                  default: false
+                height:
+                  type: integer
+                  description: Target height in pixels
+                width:
+                  type: integer
+                  description: Target width in pixels
       responses:
         "200":
           description: Successful batch upload
@@ -311,7 +334,7 @@ paths:
           description: Bucket name
         - name: path
           in: path
-          required: true
+          required: false
           schema:
             type: string
           description: File path to delete
@@ -548,7 +571,7 @@ paths:
                 $ref: "#/components/schemas/Error"
 
   /batch/delete:
-    post:
+    delete:
       summary: Batch delete files
       description: |
         Deletes multiple files in a single request.
