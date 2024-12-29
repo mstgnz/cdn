@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -39,6 +40,7 @@ type image struct {
 	awsService  service.AwsService
 	workerPool  *worker.Pool
 	batchProc   *batch.BatchProcessor
+	cache       service.CacheService
 }
 
 // ImageProcessRequest represents an image processing request
@@ -59,11 +61,18 @@ func NewImage(minioClient *minio.Client, awsService service.AwsService) Image {
 	bp := batch.NewBatchProcessor(10, 5*time.Second, processBatch)
 	bp.Start()
 
+	// Initialize cache service
+	cacheService, err := service.NewCacheService("redis://localhost:6379")
+	if err != nil {
+		log.Printf("Failed to initialize cache service: %v", err)
+	}
+
 	return &image{
 		minioClient: minioClient,
 		awsService:  awsService,
 		workerPool:  wp,
 		batchProc:   bp,
+		cache:       cacheService,
 	}
 }
 
@@ -91,53 +100,57 @@ func processBatch(items []batch.BatchItem) []batch.BatchItem {
 }
 
 func (i image) GetImage(c *fiber.Ctx) error {
-	c.Status(http.StatusNotFound)
 	ctx := context.Background()
+	bucket := c.Params("bucket")
+	objectName := c.Params("*")
 
 	var width uint
 	var height uint
 	var resize bool
 
-	bucket := c.Params("bucket")
-	objectName := c.Params("*")
-
 	if service.IsImageFile(objectName) {
 		resize, width, height = service.GetWidthAndHeight(c, service.ParamsType)
 	}
 
-	// Bucket exists
+	// Try to get from cache if resize is requested
+	if resize {
+		if cachedImage, err := i.cache.GetResizedImage(bucket, objectName, width, height); err == nil {
+			c.Set("Content-Type", http.DetectContentType(cachedImage))
+			return c.Send(cachedImage)
+		}
+	}
+
+	// Continue with normal flow if not in cache
 	if found, err := i.minioClient.BucketExists(ctx, bucket); !found || err != nil {
 		return c.SendFile("./public/notfound.png")
 	}
 
-	// Get Object
 	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
-
 	if err != nil {
 		return c.SendFile("./public/notfound.png")
 	}
 
-	// Convert Byte
 	getByte := service.StreamToByte(object)
 	if len(getByte) == 0 {
 		return c.SendFile("./public/notfound.png")
 	}
 
-	// get size
 	if err, orjWidth, orjHeight := service.ImagickGetWidthHeight(getByte); err == nil {
 		c.Set("Width", strconv.Itoa(int(orjWidth)))
 		c.Set("Height", strconv.Itoa(int(orjHeight)))
 	}
 
-	// Set Content Type
 	c.Set("Content-Type", http.DetectContentType(getByte))
 
-	// Send Resized Image
 	if resize {
-		return c.Send(service.ImagickResize(getByte, width, height))
+		resizedImage := service.ImagickResize(getByte, width, height)
+		// Cache the resized image
+		if err := i.cache.SetResizedImage(bucket, objectName, width, height, resizedImage); err != nil {
+			log.Printf("Failed to cache resized image: %v", err)
+		}
+		return c.Send(resizedImage)
 	}
 
-	// Send Original Image
 	c.Status(http.StatusFound)
 	return c.Send(getByte)
 }

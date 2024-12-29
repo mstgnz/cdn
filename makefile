@@ -57,3 +57,15 @@ create_volume:
 	else \
 		echo "Volume '$(APP_NAME)' already exists, skipping creation."; \
 	fi
+
+redis-cli:
+	docker exec -it cdn_redis redis-cli
+
+redis-logs:
+	docker logs -f cdn_redis
+
+redis-restart:
+	docker restart cdn_redis
+
+redis-clear:
+	docker exec cdn_redis redis-cli FLUSHALL
