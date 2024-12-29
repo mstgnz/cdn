@@ -1,276 +1,315 @@
-openapi: 3.1.0
+openapi: 3.0.0
 info:
-  title: "Cdn API Documentation"
-  description: "This project for hosting your static files. resize feature is available for photos with imagick. your files are kept on minio. optionally you can use backup with aws s3."
-  version: "1.2.0"
+  title: CDN Service API
+  description: API documentation for the CDN Service with MinIO and AWS S3 support
+  version: 1.3.0
+  contact:
+    name: Mesut GENEZ
+    url: https://github.com/mstgnz/cdn
+
+servers:
+  - url: http://localhost:9090
+    description: Local development server
+
 components:
   securitySchemes:
     BearerAuth:
-      type: apiKey
-      in: header
-      name: Authorization
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        status:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+
+    HealthCheck:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        services:
+          type: object
+          properties:
+            minio:
+              type: string
+            aws:
+              type: string
+            cache:
+              type: string
+        timestamp:
+          type: string
+          format: date-time
+
 paths:
-  /{bucket}/w:{width}/h:{height}/{object}:
+  /health:
     get:
-      summary: "Get Image With Width And Height"
-      operationId: "GetImageWithWidthAndHeight"
-      tags:
-        - "File"
+      summary: Health check endpoint
+      description: Returns the health status of all services
+      responses:
+        "200":
+          description: Health check results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthCheck"
+        "503":
+          description: Service unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /metrics:
+    get:
+      summary: Prometheus metrics endpoint
+      description: Returns Prometheus format metrics
+      responses:
+        "200":
+          description: Metrics in Prometheus format
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /{bucket}/{path}:
+    get:
+      summary: Get original image
       parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
+        - name: bucket
+          in: path
+          required: true
           schema:
             type: string
+        - name: path
+          in: path
           required: true
-        - name: "width"
-          in: "path"
-          description: "Width"
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Image file
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Image not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /{bucket}/w:{width}/{path}:
+    get:
+      summary: Get image with specific width
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: width
+          in: path
+          required: true
           schema:
             type: integer
+        - name: path
+          in: path
           required: true
-        - name: "height"
-          in: "path"
-          description: "Height"
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Resized image
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+
+  /{bucket}/h:{height}/{path}:
+    get:
+      summary: Get image with specific height
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: height
+          in: path
+          required: true
           schema:
             type: integer
+        - name: path
+          in: path
           required: true
-        - name: "object"
-          in: "path"
-          description: "Object Name"
           schema:
             type: string
-          required: true
       responses:
-        200:
-          description: "File Found"
-        404:
-          description: "File Not Found"
-  /{bucket}/w:{width}/{object}:
+        "200":
+          description: Resized image
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+
+  /{bucket}/w:{width}/h:{height}/{path}:
     get:
-      summary: "Get Image With Width"
-      operationId: "GetImageWithWidth"
-      tags:
-        - "File"
+      summary: Get image with specific dimensions
       parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
+        - name: bucket
+          in: path
+          required: true
           schema:
             type: string
+        - name: width
+          in: path
           required: true
-        - name: "width"
-          in: "path"
-          description: "Width"
           schema:
             type: integer
+        - name: height
+          in: path
           required: true
-        - name: "object"
-          in: "path"
-          description: "Object Name"
-          schema:
-            type: string
-          required: true
-      responses:
-        200:
-          description: "File Found"
-        404:
-          description: "File Not Found"
-  /{bucket}/h:{height}/{object}:
-    get:
-      summary: "Get Image With Height"
-      operationId: "GetImageWithHeight"
-      tags:
-        - "File"
-      parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
-          schema:
-            type: string
-          required: true
-        - name: "height"
-          in: "path"
-          description: "Height"
           schema:
             type: integer
+        - name: path
+          in: path
           required: true
-        - name: "object"
-          in: "path"
-          description: "Object Name"
           schema:
             type: string
-          required: true
       responses:
-        200:
-          description: "File Found"
-        404:
-          description: "File Not Found"
-  /{bucket}/{object}:
-    get:
-      summary: "Get Image"
-      operationId: "GetImage"
-      tags:
-        - "File"
-      parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
-          schema:
-            type: string
-          required: true
-        - name: "object"
-          in: "path"
-          description: "Object Name"
-          schema:
-            type: string
-          required: true
-      responses:
-        200:
-          description: "File Found"
-        404:
-          description: "File Not Found"
-    delete:
-      summary: "Delete Image"
-      operationId: "DeleteImage"
-      tags:
-        - "File"
-      security:
-        - BearerAuth: ["Authorization"]
-      parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
-          schema:
-            type: string
-          required: true
-        - name: "object"
-          in: "path"
-          description: "Object Name"
-          schema:
-            type: string
-          required: true
-      responses:
-        200:
-          description: "File Successfully Deleted"
-        400:
-          description: "Invalid path or bucket or file"
-        500:
-          description: "Minio Error"
-  /with-aws/{bucket}/{object}:
-    delete:
-      summary: "Delete Image With Aws"
-      operationId: "DeleteImageWithAws"
-      tags:
-        - "File"
-      security:
-        - BearerAuth: ["Authorization"]
-      parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
-          schema:
-            type: string
-          required: true
-        - name: "object"
-          in: "path"
-          description: "Object Name"
-          schema:
-            type: string
-          required: true
-      responses:
-        200:
-          description: "File Successfully Deleted"
-        400:
-          description: "Invalid path or bucket or file"
-        500:
-          description: "Minio or Aws Error"
-  /resize:
-    post:
-      summary: "Resize Image Without Save"
-      operationId: "Resize"
-      tags:
-        - "Resize"
-      security:
-        - BearerAuth: ["Authorization"]
-      requestBody:
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              required:
-                - width
-                - height
-                - file
-              properties:
-                width:
-                  type: integer
-                height:
-                  type: integer
-                file:
-                  type: string
-                  format: binary
-      responses:
-        200:
-          description: "File Found"
-        404:
-          description: "File Not Found"
+        "200":
+          description: Resized image
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+
   /upload:
     post:
-      summary: "Upload File"
-      operationId: "Upload"
-      tags:
-        - "Upload"
+      summary: Upload image
       security:
-        - BearerAuth: ["Authorization"]
+        - BearerAuth: []
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          multipart/form-data:
             schema:
               type: object
-              required:
-                - bucket
-                - path
-                - file
               properties:
+                file:
+                  type: string
+                  format: binary
                 bucket:
                   type: string
                 path:
                   type: string
-                file:
-                  type: string
-                  format: binary
                 width:
                   type: integer
                 height:
                   type: integer
+              required:
+                - file
+                - bucket
       responses:
-        201:
-          description: "Successful Created"
-        400:
-          description: "Some Error"
+        "200":
+          description: Upload successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+
   /upload-with-aws:
     post:
-      summary: "Upload File With Aws"
-      operationId: "UploadImageWithAws"
-      tags:
-        - "Upload"
+      summary: Upload image with AWS backup
       security:
-        - BearerAuth: ["Authorization"]
+        - BearerAuth: []
       requestBody:
         content:
-          application/x-www-form-urlencoded:
+          multipart/form-data:
             schema:
               type: object
-              required:
-                - bucket
-                - path
-                - file
               properties:
+                file:
+                  type: string
+                  format: binary
                 bucket:
                   type: string
                 path:
                   type: string
+                width:
+                  type: integer
+                height:
+                  type: integer
+              required:
+                - file
+                - bucket
+      responses:
+        "200":
+          description: Upload successful with AWS backup
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /upload-url:
+    post:
+      summary: Upload image from URL
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url:
+                  type: string
+                  format: uri
+                bucket:
+                  type: string
+                path:
+                  type: string
+              required:
+                - url
+                - bucket
+      responses:
+        "200":
+          description: URL upload successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /resize:
+    post:
+      summary: Resize existing image
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
                 file:
                   type: string
                   format: binary
@@ -278,152 +317,196 @@ paths:
                   type: integer
                 height:
                   type: integer
-      responses:
-        201:
-          description: "Successful Created"
-        400:
-          description: "Some Error"
-  /upload-url:
-    post:
-      summary: "Upload Url"
-      operationId: "UploadImageWithUrl"
-      tags:
-        - "Upload"
-      security:
-        - BearerAuth: ["Authorization"]
-      requestBody:
-        content:
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
               required:
-                - bucket
-                - path
-                - url
-                - extension
-              properties:
-                bucket:
-                  type: string
-                path:
-                  type: string
-                url:
-                  type: string
-                extension:
-                  type: string
+                - file
       responses:
-        201:
-          description: "Successful Created"
-        400:
-          description: "Some Error"
-  /minio/bucket-list:
-    get:
-      summary: "Minio Bucket Lists"
-      operationId: "MinioBucketLists"
-      tags:
-        - "Minio"
-      security:
-        - BearerAuth: ["Authorization"]
-      responses:
-        200:
-          description: "Bucket List"
-  /minio/{bucket}/exists:
-    get:
-      summary: "Minio Bucket Exists"
-      operationId: "MinioBucketExists"
-      tags:
-        - "Minio"
-      security:
-        - BearerAuth: ["Authorization"]
-      parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
-          schema:
-            type: string
-          required: true
-      responses:
-        302:
-          description: "Bucket Exists"
-        404:
-          description: "Bucket Not Exists"
-  /minio/{bucket}/create:
-    get:
-      summary: "Minio Bucket Create"
-      operationId: "MinioBucketCreate"
-      tags:
-        - "Minio"
-      security:
-        - BearerAuth: ["Authorization"]
-      parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
-          schema:
-            type: string
-          required: true
-      responses:
-        200:
-          description: "Failed to Create Bucket"
-        201:
-          description: "Bucket Create"
-  /minio/{bucket}/delete:
+        "200":
+          description: Resize successful
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+
+  /{bucket}/*:
     delete:
-      summary: "Minio Bucket Delete"
-      operationId: "MinioBucketDelete"
-      tags:
-        - "Minio"
+      summary: Delete image
       security:
-        - BearerAuth: ["Authorization"]
+        - BearerAuth: []
       parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
+        - name: bucket
+          in: path
+          required: true
           schema:
             type: string
-          required: true
       responses:
-        responses:
-          200:
-            description: "Bucket Delete"
+        "200":
+          description: Delete successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /with-aws/{bucket}/*:
+    delete:
+      summary: Delete image from both MinIO and AWS
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete successful from both storages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /aws/bucket-list:
     get:
-      summary: "Aws Bucket List"
-      operationId: "AwsBucketList"
-      tags:
-        - "Aws"
+      summary: List AWS buckets
       security:
-        - BearerAuth: ["Authorization"]
+        - BearerAuth: []
       responses:
-        200:
-          description: "Bucket List"
-  /aws/vault-list:
-    get:
-      summary: "Aws Vault List"
-      operationId: "AwsVaultList"
-      tags:
-        - "Aws"
-      security:
-        - BearerAuth: ["Authorization"]
-      responses:
-        200:
-          description: "Vault List"
+        "200":
+          description: List of AWS buckets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    creationDate:
+                      type: string
+                      format: date-time
+
   /aws/{bucket}/exists:
     get:
-      summary: "Aws Bucket Exists"
-      operationId: "AwsBucketExists"
-      tags:
-        - "Aws"
+      summary: Check if AWS bucket exists
       security:
-        - BearerAuth: ["Authorization"]
+        - BearerAuth: []
       parameters:
-        - name: "bucket"
-          in: "path"
-          description: "Bucket Name"
+        - name: bucket
+          in: path
+          required: true
           schema:
             type: string
-          required: true
       responses:
-        302:
-          description: "Bucket Exists"
-        404:
-          description: "Bucket Not Exists"
+        "200":
+          description: Bucket existence check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists:
+                    type: boolean
+
+  /aws/vault-list:
+    get:
+      summary: List AWS Glacier vaults
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of Glacier vaults
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    vaultName:
+                      type: string
+                    creationDate:
+                      type: string
+                      format: date-time
+
+  /minio/bucket-list:
+    get:
+      summary: List MinIO buckets
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of MinIO buckets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    creationDate:
+                      type: string
+                      format: date-time
+
+  /minio/{bucket}/exists:
+    get:
+      summary: Check if MinIO bucket exists
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bucket existence check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists:
+                    type: boolean
+
+  /minio/{bucket}/create:
+    get:
+      summary: Create MinIO bucket
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bucket creation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /minio/{bucket}/delete:
+    get:
+      summary: Delete MinIO bucket
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bucket deletion result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
