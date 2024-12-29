@@ -124,6 +124,9 @@ func main() {
 		return c.SendFile("./public/index.html")
 	})
 
+	// Health check endpoint
+	app.Get("/health", handler.HealthCheck)
+
 	// Prometheus middleware
 	app.Use(observability.PrometheusMiddleware())
 
