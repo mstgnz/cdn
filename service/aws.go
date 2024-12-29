@@ -25,6 +25,7 @@ type AwsService interface {
 	ListBuckets() ([]types.Bucket, error)
 	BucketExists(bucketName string) bool
 	DeleteObjects(bucketName string, objectKeys []string) error
+	IsConnected() bool
 }
 
 type awsService struct {
@@ -98,4 +99,10 @@ func (as *awsService) GlacierUploadArchive(vaultName string, fileBuffer []byte) 
 		VaultName: &vaultName,
 		Body:      bytes.NewReader(fileBuffer),
 	})
+}
+
+func (a *awsService) IsConnected() bool {
+	client := s3.NewFromConfig(a.cfg)
+	_, err := client.ListBuckets(context.TODO(), &s3.ListBucketsInput{})
+	return err == nil
 }
