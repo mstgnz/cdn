@@ -124,7 +124,6 @@ func main() {
 	}
 
 	if !disableDelete {
-		app.Delete("/with-aws/:bucket/*", AuthMiddleware, imageHandler.DeleteImageWithAws)
 		app.Delete("/:bucket/*", AuthMiddleware, imageHandler.DeleteImage)
 	}
 
@@ -133,8 +132,7 @@ func main() {
 		uploadGroup := app.Group("/")
 		uploadGroup.Use(middleware.NewRateLimiter(10, time.Minute))
 		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
-		uploadGroup.Post("/upload-with-aws", AuthMiddleware, imageHandler.UploadImageWithAws)
-		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadImageWithUrl)
+		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadWithUrl)
 	}
 
 	// Index

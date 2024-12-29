@@ -60,35 +60,6 @@ func Test_image_DeleteImage(t *testing.T) {
 	}
 }
 
-func Test_image_DeleteImageWithAws(t *testing.T) {
-	type fields struct {
-		minioClient *minio.Client
-		awsService  service.AwsService
-	}
-	type args struct {
-		c *fiber.Ctx
-	}
-	tests := []struct {
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			i := image{
-				minioClient: tt.fields.minioClient,
-				awsService:  tt.fields.awsService,
-			}
-			if err := i.DeleteImageWithAws(tt.args.c); (err != nil) != tt.wantErr {
-				t.Errorf("DeleteImageWithAws() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func Test_image_GetImage(t *testing.T) {
 	type fields struct {
 		minioClient *minio.Client
@@ -176,35 +147,6 @@ func Test_image_UploadImage(t *testing.T) {
 	}
 }
 
-func Test_image_UploadImageWithAws(t *testing.T) {
-	type fields struct {
-		minioClient *minio.Client
-		awsService  service.AwsService
-	}
-	type args struct {
-		c *fiber.Ctx
-	}
-	tests := []struct {
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			i := image{
-				minioClient: tt.fields.minioClient,
-				awsService:  tt.fields.awsService,
-			}
-			if err := i.UploadImageWithAws(tt.args.c); (err != nil) != tt.wantErr {
-				t.Errorf("UploadImageWithAws() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
 func Test_image_UploadImageWithUrl(t *testing.T) {
 	type fields struct {
 		minioClient *minio.Client
@@ -227,7 +169,7 @@ func Test_image_UploadImageWithUrl(t *testing.T) {
 				minioClient: tt.fields.minioClient,
 				awsService:  tt.fields.awsService,
 			}
-			if err := i.UploadImageWithUrl(tt.args.c); (err != nil) != tt.wantErr {
+			if err := i.UploadWithUrl(tt.args.c); (err != nil) != tt.wantErr {
 				t.Errorf("UploadImageWithUrl() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
