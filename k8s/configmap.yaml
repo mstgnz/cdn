@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cdn-config
+  namespace: default
+data:
+  minio_endpoint: "minio-service:9000"
+  minio_use_ssl: "false"
+  disable_delete: "false"
+  disable_upload: "false"
+  disable_get: "false"
