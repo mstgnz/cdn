@@ -12,7 +12,7 @@ import (
 // BatchItem represents a single item in a batch
 type BatchItem struct {
 	ID      string
-	Data    interface{}
+	Data    any
 	Error   error
 	Success bool
 }
@@ -132,26 +132,35 @@ func (b *BatchProcessor) processBatchWithRetry(items []BatchItem) {
 
 	var processed []BatchItem
 	retries := 0
+	start := time.Now()
 
 	for retries <= b.config.MaxRetries {
-		start := time.Now()
 		processed = b.processor(items)
 		duration := time.Since(start).Seconds()
 
-		observability.StorageOperationDuration.WithLabelValues("batch_process", "bulk").Observe(duration)
-
 		failed := 0
+		success := 0
 		for _, item := range processed {
-			if !item.Success {
+			if item.Success {
+				success++
+			} else {
 				failed++
 			}
 		}
+
+		// Update metrics
+		observability.BatchProcessingDuration.WithLabelValues("success").Observe(duration)
+		observability.BatchItemsProcessed.WithLabelValues("success").Add(float64(success))
+		observability.BatchItemsProcessed.WithLabelValues("failed").Add(float64(failed))
+		observability.BatchProcessorQueueSize.Set(float64(len(b.items)))
 
 		if failed == 0 {
 			break
 		}
 
 		retries++
+		observability.BatchRetries.Inc()
+
 		if retries <= b.config.MaxRetries {
 			b.logger.Warn().
 				Int("retry", retries).

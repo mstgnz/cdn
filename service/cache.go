@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -22,6 +23,8 @@ type CacheService interface {
 type redisCache struct {
 	client *redis.Client
 	logger zerolog.Logger
+	hits   int64
+	misses int64
 }
 
 func NewCacheService(redisURL string) (CacheService, error) {
@@ -55,7 +58,26 @@ func (c *redisCache) Get(key string) ([]byte, error) {
 
 	defer func() {
 		duration := time.Since(start).Seconds()
-		observability.StorageOperationDuration.WithLabelValues("cache_get", "redis").Observe(duration)
+		status := "hit"
+		if err != nil {
+			status = "miss"
+			atomic.AddInt64(&c.misses, 1)
+		} else {
+			atomic.AddInt64(&c.hits, 1)
+		}
+
+		observability.CacheOperations.WithLabelValues("get", status).Inc()
+		observability.CacheOperationDuration.WithLabelValues("get", status).Observe(duration)
+
+		// Update hit ratio
+		hits := atomic.LoadInt64(&c.hits)
+		misses := atomic.LoadInt64(&c.misses)
+		ratio := float64(0)
+		if total := hits + misses; total > 0 {
+			ratio = float64(hits) / float64(total)
+		}
+		observability.CacheHitRatio.WithLabelValues("get").Set(ratio)
+
 		if err != nil {
 			c.logger.Error().Err(err).Str("key", key).Msg("Cache get failed")
 		}
@@ -65,6 +87,11 @@ func (c *redisCache) Get(key string) ([]byte, error) {
 	if err == redis.Nil {
 		return nil, fmt.Errorf("key not found: %s", key)
 	}
+
+	if err == nil {
+		observability.CacheSize.WithLabelValues("data").Add(float64(len(val)))
+	}
+
 	return val, err
 }
 
@@ -75,21 +102,41 @@ func (c *redisCache) Set(key string, value []byte, expiration time.Duration) err
 
 	defer func() {
 		duration := time.Since(start).Seconds()
-		observability.StorageOperationDuration.WithLabelValues("cache_set", "redis").Observe(duration)
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		observability.CacheOperations.WithLabelValues("set", status).Inc()
+		observability.CacheOperationDuration.WithLabelValues("set", status).Observe(duration)
+
 		if err != nil {
 			c.logger.Error().Err(err).Str("key", key).Msg("Cache set failed")
 		}
 	}()
 
 	err = c.client.Set(ctx, key, value, expiration).Err()
+
+	if err == nil {
+		observability.CacheSize.WithLabelValues("data").Add(float64(len(value)))
+	}
+
 	return err
 }
 
 func (c *redisCache) Delete(key string) error {
+	start := time.Now()
 	ctx := context.Background()
 	var err error
 
 	defer func() {
+		duration := time.Since(start).Seconds()
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		observability.CacheOperations.WithLabelValues("delete", status).Inc()
+		observability.CacheOperationDuration.WithLabelValues("delete", status).Observe(duration)
+
 		if err != nil {
 			c.logger.Error().Err(err).Str("key", key).Msg("Cache delete failed")
 		}

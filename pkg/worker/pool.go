@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"sync"
 	"time"
 
@@ -115,22 +114,25 @@ func (p *Pool) worker(id int) {
 				return
 			}
 
+			observability.WorkerPoolActiveWorkers.Inc()
+			defer observability.WorkerPoolActiveWorkers.Dec()
+
 			var err error
 			retries := 0
+			start := time.Now()
 
 			for retries <= p.maxRetries {
-				start := time.Now()
 				err = job.Task()
 				duration := time.Since(start).Seconds()
 
-				// Record metrics
-				observability.ImageProcessingDuration.WithLabelValues("worker_" + strconv.Itoa(id)).Observe(duration)
-
 				if err == nil {
+					observability.WorkerJobProcessingDuration.WithLabelValues("success").Observe(duration)
 					break
 				}
 
 				retries++
+				observability.WorkerJobRetries.WithLabelValues("image_processing").Inc()
+
 				p.logger.Error().
 					Err(err).
 					Str("jobID", job.ID).
@@ -142,9 +144,15 @@ func (p *Pool) worker(id int) {
 					time.Sleep(p.retryDelay)
 					continue
 				}
+
+				observability.WorkerJobProcessingDuration.WithLabelValues("failure").Observe(duration)
 			}
 
 			job.Response <- err
+
+			// Update queue size metric
+			queueSize := float64(len(p.jobQueue))
+			observability.WorkerPoolQueueSize.Set(queueSize)
 
 		case <-p.ctx.Done():
 			return
