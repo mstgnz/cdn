@@ -17,29 +17,49 @@ type BatchItem struct {
 	Success bool
 }
 
+// Config represents batch processor configuration
+type Config struct {
+	BatchSize     int
+	FlushTimeout  time.Duration
+	MaxConcurrent int
+	MaxRetries    int
+	RetryDelay    time.Duration
+}
+
+// DefaultConfig returns default configuration
+func DefaultConfig() Config {
+	return Config{
+		BatchSize:     10,
+		FlushTimeout:  5 * time.Second,
+		MaxConcurrent: 5,
+		MaxRetries:    3,
+		RetryDelay:    time.Second,
+	}
+}
+
 // BatchProcessor handles batch processing operations
 type BatchProcessor struct {
-	batchSize    int
-	flushTimeout time.Duration
-	items        chan BatchItem
-	processor    func([]BatchItem) []BatchItem
-	logger       zerolog.Logger
-	wg           sync.WaitGroup
-	ctx          context.Context
-	cancelFunc   context.CancelFunc
+	config     Config
+	items      chan BatchItem
+	processor  func([]BatchItem) []BatchItem
+	logger     zerolog.Logger
+	wg         sync.WaitGroup
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+	semaphore  chan struct{}
 }
 
 // NewBatchProcessor creates a new batch processor
-func NewBatchProcessor(batchSize int, flushTimeout time.Duration, processor func([]BatchItem) []BatchItem) *BatchProcessor {
+func NewBatchProcessor(config Config, processor func([]BatchItem) []BatchItem) *BatchProcessor {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BatchProcessor{
-		batchSize:    batchSize,
-		flushTimeout: flushTimeout,
-		items:        make(chan BatchItem, batchSize*2),
-		processor:    processor,
-		logger:       observability.Logger(),
-		ctx:          ctx,
-		cancelFunc:   cancel,
+		config:     config,
+		items:      make(chan BatchItem, config.BatchSize*2),
+		processor:  processor,
+		logger:     observability.Logger(),
+		ctx:        ctx,
+		cancelFunc: cancel,
+		semaphore:  make(chan struct{}, config.MaxConcurrent),
 	}
 }
 
@@ -70,53 +90,87 @@ func (b *BatchProcessor) processBatches() {
 	defer b.wg.Done()
 
 	var batch []BatchItem
-	timer := time.NewTimer(b.flushTimeout)
+	timer := time.NewTimer(b.config.FlushTimeout)
 	defer timer.Stop()
 
 	for {
 		select {
 		case item, ok := <-b.items:
 			if !ok {
-				// Process remaining items before shutting down
 				if len(batch) > 0 {
-					b.processBatch(batch)
+					b.processBatchWithRetry(batch)
 				}
 				return
 			}
 
 			batch = append(batch, item)
-			if len(batch) >= b.batchSize {
-				b.processBatch(batch)
+			if len(batch) >= b.config.BatchSize {
+				b.processBatchWithRetry(batch)
 				batch = nil
-				timer.Reset(b.flushTimeout)
+				timer.Reset(b.config.FlushTimeout)
 			}
 
 		case <-timer.C:
 			if len(batch) > 0 {
-				b.processBatch(batch)
+				b.processBatchWithRetry(batch)
 				batch = nil
 			}
-			timer.Reset(b.flushTimeout)
+			timer.Reset(b.config.FlushTimeout)
 
 		case <-b.ctx.Done():
 			if len(batch) > 0 {
-				b.processBatch(batch)
+				b.processBatchWithRetry(batch)
 			}
 			return
 		}
 	}
 }
 
-// processBatch processes a single batch of items
-func (b *BatchProcessor) processBatch(items []BatchItem) {
-	start := time.Now()
-	processed := b.processor(items)
-	duration := time.Since(start).Seconds()
+func (b *BatchProcessor) processBatchWithRetry(items []BatchItem) {
+	b.semaphore <- struct{}{}        // Acquire semaphore
+	defer func() { <-b.semaphore }() // Release semaphore
 
-	// Record metrics
-	observability.StorageOperationDuration.WithLabelValues("batch_process", "bulk").Observe(duration)
+	var processed []BatchItem
+	retries := 0
 
-	// Log results
+	for retries <= b.config.MaxRetries {
+		start := time.Now()
+		processed = b.processor(items)
+		duration := time.Since(start).Seconds()
+
+		observability.StorageOperationDuration.WithLabelValues("batch_process", "bulk").Observe(duration)
+
+		failed := 0
+		for _, item := range processed {
+			if !item.Success {
+				failed++
+			}
+		}
+
+		if failed == 0 {
+			break
+		}
+
+		retries++
+		if retries <= b.config.MaxRetries {
+			b.logger.Warn().
+				Int("retry", retries).
+				Int("failed", failed).
+				Msg("Retrying failed batch items")
+
+			// Filter failed items for retry
+			var failedItems []BatchItem
+			for _, item := range processed {
+				if !item.Success {
+					failedItems = append(failedItems, item)
+				}
+			}
+			items = failedItems
+			time.Sleep(b.config.RetryDelay)
+		}
+	}
+
+	// Log final results
 	success := 0
 	failed := 0
 	for _, item := range processed {
@@ -135,6 +189,5 @@ func (b *BatchProcessor) processBatch(items []BatchItem) {
 		Int("total", len(processed)).
 		Int("success", success).
 		Int("failed", failed).
-		Float64("duration", duration).
 		Msg("Batch processing completed")
 }
