@@ -27,11 +27,11 @@ var (
 )
 
 func main() {
-	// Logger'ı başlat
+	// Logger
 	observability.InitLogger()
 	logger := observability.Logger()
 
-	// Tracer'ı başlat
+	// Tracer
 	cleanup, initErr := observability.InitTracer("cdn-service", "http://localhost:14268/api/traces")
 	if initErr != nil {
 		logger.Fatal().Err(initErr).Msg("Failed to initialize tracer")
@@ -48,6 +48,13 @@ func main() {
 
 	awsService = service.NewAwsService()
 	minioClient = service.MinioClient()
+
+	// Initialize cache service
+	cacheService, err := service.NewCacheService("")
+	if err != nil {
+		logger.Fatal().Err(err).Msg("Failed to initialize cache service")
+	}
+
 	imageHandler = handler.NewImage(minioClient, awsService)
 	awsHandler = handler.NewAwsHandler(awsService)
 	minioHandler = handler.NewMinioHandler(minioClient)
@@ -125,7 +132,8 @@ func main() {
 	})
 
 	// Health check endpoint
-	app.Get("/health", handler.HealthCheck)
+	healthChecker := handler.NewHealthChecker(minioClient, awsService, cacheService)
+	app.Get("/health", healthChecker.HealthCheck)
 
 	// Prometheus middleware
 	app.Use(observability.PrometheusMiddleware())
