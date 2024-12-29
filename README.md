@@ -19,16 +19,18 @@ A high-performance Content Delivery Network (CDN) service built with Go, featuri
 - URL-based image processing
 
 ### Performance
-- Redis caching layer
+- Redis caching layer with optimized storage
 - Batch processing with configurable sizes
 - Worker pool for parallel processing
 - Rate limiting and request throttling
 - Performance metrics and monitoring
+- Dynamic ImageMagick version management
 
 ### Security
 - Token-based authentication
 - CORS configuration
-- Rate limiting per endpoint
+- Rate limiting per endpoint with bypass protection
+- Redis-based rate limit storage
 - Request size limitations
 - Trusted proxy support
 
@@ -46,10 +48,16 @@ A high-performance Content Delivery Network (CDN) service built with Go, featuri
 - Docker support
 - Graceful shutdown
 
+### API Standardization
+- Consistent response formats across all endpoints
+- Detailed error messages and codes
+- Standardized success/error patterns
+- Comprehensive request validation
+
 ## Quick Start
 
 ### Prerequisites
-- Go 1.21+
+- Go 1.22+
 - Docker and Docker Compose
 - MinIO Server (or AWS S3 access)
 - Redis Server
@@ -198,10 +206,30 @@ docker exec cdn-golang go tool cover -html=coverage.out -o coverage.html
 
 ### Test Environment
 The test container includes:
-- ImageMagick for image processing
-- Redis for caching tests
+- ImageMagick (latest version, dynamically managed)
+- Redis for caching and rate limiting tests
 - MinIO for storage tests
 - Mock AWS services
+- k6 for load testing
+
+### Test Coverage
+- Unit tests with minimum 80% coverage
+- Integration tests for all endpoints
+- Performance tests using k6
+- Load testing scenarios
+- Automated API testing
+
+### Load Testing
+```bash
+# Run basic load test
+k6 run test/performance/load_test.js
+
+# Run stress test
+k6 run --vus 50 --duration 5m test/performance/load_test.js
+
+# Run spike test
+k6 run --vus 100 --duration 10s test/performance/spike_test.js
+```
 
 ## Architecture
 
@@ -222,8 +250,9 @@ The service is built with a modular architecture:
 - Redis caching for resized images
 - Worker pool for concurrent image processing
 - Batch processing for bulk operations
-- Rate limiting to prevent overload
+- Rate limiting with bypass protection
 - Efficient memory management
+- Dynamic resource allocation
 
 ## Contributing
 
