@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/gofiber/fiber/v2"
@@ -12,6 +13,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/handler"
+	"github.com/mstgnz/cdn/pkg/middleware"
 	"github.com/mstgnz/cdn/pkg/observability"
 	"github.com/mstgnz/cdn/service"
 )
@@ -54,6 +56,10 @@ func main() {
 		BodyLimit: 25 * 1024 * 2014,
 	})
 
+	// Global rate limiter - 100 requests per minute
+	app.Use(middleware.DefaultRateLimiter())
+
+	// CORS middleware
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
 		AllowHeaders: "*",
@@ -104,10 +110,13 @@ func main() {
 		app.Delete("/:bucket/*", AuthMiddleware, imageHandler.DeleteImage)
 	}
 
+	// Upload endpoints with stricter rate limit - 10 requests per minute
 	if !disableUpload {
-		app.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
-		app.Post("/upload-with-aws", AuthMiddleware, imageHandler.UploadImageWithAws)
-		app.Post("/upload-url", AuthMiddleware, imageHandler.UploadImageWithUrl)
+		uploadGroup := app.Group("/")
+		uploadGroup.Use(middleware.NewRateLimiter(10, time.Minute))
+		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
+		uploadGroup.Post("/upload-with-aws", AuthMiddleware, imageHandler.UploadImageWithAws)
+		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadImageWithUrl)
 	}
 
 	// Index
