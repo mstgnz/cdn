@@ -1,47 +1,52 @@
-FROM golang:1.22 as builder
+# Build stage
+FROM golang:1.22-alpine AS builder
 
-# Ignore APT warnings about not having a TTY
-ENV DEBIAN_FRONTEND=noninteractive \
-    IMAGEMAGICK_VERSION=7.1.1-38
-
-RUN apt-get update \
-    && apt-get install -y \
-    wget build-essential \
-    ffmpeg \
-    pkg-config \
-    libmagickcore-dev libmagickwand-dev \
-    libjpeg-dev \
-    libpng-dev \
-    libtiff-dev \
-    libgif-dev \
-    libx11-dev \
-    fontconfig fontconfig-config libfontconfig1-dev \
-    ghostscript gsfonts gsfonts-x11 \
-    libfreetype6-dev \
-    vim \
-    --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN echo "Installing ImageMagick" && cd && \
-    wget https://download.imagemagick.org/ImageMagick/download/releases/ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz && \
-    tar xvzf ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz && \
-    cd ImageMagick* && \
-    ./configure \
-    --without-magick-plus-plus \
-    --without-perl \
-    --disable-openmp \
-    --with-gvc=no \
-    --with-fontconfig=yes \
-    --with-freetype=yes \
-    --with-gslib \
-    --disable-docs && \
-    echo "Building ImageMagick" && \
-    make -j$(nproc) && make install && \
-    ldconfig /usr/local/lib
+# Install build dependencies
+RUN apk add --no-cache git
 
 WORKDIR /app
-COPY go.mod go.sum ./
-RUN go mod download
 COPY . .
-RUN GOOS=linux go build -o CdnApp ./cmd
-ENTRYPOINT ["/app/CdnApp"]
+RUN go mod download
+RUN CGO_ENABLED=0 GOOS=linux go build -o main ./cmd/main.go
+
+# Final stage
+FROM debian:bullseye-slim
+
+# Copy version check script
+COPY scripts/get_imagemagick_version.sh /tmp/
+RUN chmod +x /tmp/get_imagemagick_version.sh
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV IMAGEMAGICK_VERSION=$(/tmp/get_imagemagick_version.sh)
+
+# Install dependencies and ImageMagick
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    build-essential \
+    pkg-config \
+    libpng-dev \
+    libjpeg-dev \
+    libtiff-dev \
+    libwebp-dev \
+    && cd /tmp \
+    && wget https://download.imagemagick.org/archive/releases/ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz \
+    && tar xvzf ImageMagick-${IMAGEMAGICK_VERSION}.tar.gz \
+    && cd ImageMagick-* \
+    && ./configure \
+    && make \
+    && make install \
+    && ldconfig /usr/local/lib \
+    && apt-get remove -y build-essential wget \
+    && apt-get autoremove -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /tmp/*
+
+WORKDIR /app
+COPY --from=builder /app/main .
+COPY --from=builder /app/public ./public
+
+EXPOSE 9090
+CMD ["./main"]
