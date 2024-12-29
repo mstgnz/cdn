@@ -1,22 +1,12 @@
-# Build stage
-FROM golang:1.22-alpine AS builder
-
-# Install build dependencies
-RUN apk add --no-cache git gcc musl-dev pkgconfig imagemagick-dev
-
-WORKDIR /build
-COPY . .
-RUN go mod download
-RUN CGO_ENABLED=1 GOOS=linux go build -o app ./cmd/main.go
-
-# Final stage
-FROM debian:bullseye-slim
+FROM golang:1.22-bullseye
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install dependencies and ImageMagick
 RUN apt-get update && apt-get install -y \
+    git \
+    gcc \
     curl \
     wget \
     build-essential \
@@ -24,7 +14,11 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libjpeg-dev \
     libtiff-dev \
-    libwebp-dev
+    libwebp-dev \
+    libmagickwand-dev \
+    libmagickcore-dev \
+    imagemagick \
+    && ldconfig
 
 # Copy and run version check script
 COPY scripts/get_imagemagick_version.sh /tmp/
@@ -39,15 +33,16 @@ RUN chmod +x /tmp/get_imagemagick_version.sh && \
     make install && \
     ldconfig /usr/local/lib && \
     cd / && \
-    apt-get remove -y build-essential wget && \
+    apt-get remove -y wget && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf /tmp/*
 
 WORKDIR /app
-COPY --from=builder /build/app /app/main
-COPY --from=builder /build/public /app/public
+COPY . .
+RUN go mod download
+RUN CGO_ENABLED=1 GOOS=linux go build -o main ./cmd/main.go
 
 EXPOSE 9090
-ENTRYPOINT ["/app/main"]
+ENTRYPOINT ["./main"]
