@@ -1,6 +1,17 @@
 # CDN Service
 
-A high-performance Content Delivery Network (CDN) service built with Go, featuring image processing, caching, and multi-cloud storage support.
+## About
+
+CDN Service is a high-performance, cloud-native content delivery solution built with Go. It provides a robust and scalable platform for managing and delivering digital assets across multiple cloud providers. The service combines modern architectural patterns with enterprise-grade features to offer:
+
+- **Multi-Cloud Storage**: Seamless integration with MinIO and AWS S3, including Glacier support for cost-effective archival
+- **Advanced Image Processing**: Real-time image resizing and optimization with support for various formats
+- **Enterprise Features**: Circuit breaker pattern, rate limiting, and batch operations
+- **High Performance**: Redis caching, worker pools, and optimized file handling
+- **Real-Time Monitoring**: WebSocket-based live monitoring, Prometheus metrics, and comprehensive health checks
+- **Developer-Friendly**: Swagger documentation, standardized API responses, and easy deployment options
+
+Perfect for organizations needing a reliable, scalable, and feature-rich content delivery solution with support for multiple cloud providers and advanced monitoring capabilities.
 
 ## Features
 
