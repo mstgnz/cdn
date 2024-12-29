@@ -12,6 +12,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/handler"
+	"github.com/mstgnz/cdn/pkg/observability"
 	"github.com/mstgnz/cdn/service"
 )
 
@@ -24,10 +25,20 @@ var (
 )
 
 func main() {
+	// Logger'ı başlat
+	observability.InitLogger()
+	logger := observability.Logger()
+
+	// Tracer'ı başlat
+	cleanup, initErr := observability.InitTracer("cdn-service", "http://localhost:14268/api/traces")
+	if initErr != nil {
+		logger.Fatal().Err(initErr).Msg("Failed to initialize tracer")
+	}
+	defer cleanup()
 
 	err := godotenv.Load(".env")
 	if err != nil {
-		log.Fatal("Error loading .env file, must be at project root")
+		logger.Fatal().Err(err).Msg("Error loading .env file")
 	}
 
 	// watch .env
@@ -104,9 +115,16 @@ func main() {
 		return c.SendFile("./public/index.html")
 	})
 
-	port := fmt.Sprintf(":%s", service.GetEnv("APP_PORT"))
-	log.Fatal(app.Listen(port))
+	// Prometheus middleware'ini ekle
+	app.Use(observability.PrometheusMiddleware())
 
+	// Metrics endpoint'i
+	app.Get("/metrics", observability.MetricsHandler)
+
+	port := fmt.Sprintf(":%s", service.GetEnv("APP_PORT"))
+	if err := app.Listen(port); err != nil {
+		logger.Fatal().Err(err).Msg("Failed to start server")
+	}
 }
 
 func AuthMiddleware(c *fiber.Ctx) error {
