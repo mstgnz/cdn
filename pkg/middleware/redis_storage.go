@@ -1,10 +1,30 @@
 package middleware
 
 import (
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/mstgnz/cdn/service"
 )
+
+var (
+	// Only allow alphanumeric characters, hyphens, underscores, and dots
+	keyPattern = regexp.MustCompile(`[^a-zA-Z0-9\-_\.]`)
+)
+
+// sanitizeKey cleans and secures Redis keys
+func sanitizeKey(key string) string {
+	// Replace spaces with hyphens
+	key = strings.ReplaceAll(key, " ", "-")
+	// Remove disallowed characters
+	key = keyPattern.ReplaceAllString(key, "")
+	// Limit maximum length
+	if len(key) > 512 {
+		key = key[:512]
+	}
+	return key
+}
 
 // RedisStorage implements fiber.Storage interface for Redis
 type RedisStorage struct {
@@ -22,17 +42,17 @@ func NewRedisStorage() (*RedisStorage, error) {
 
 // Get retrieves a value from Redis
 func (r *RedisStorage) Get(key string) ([]byte, error) {
-	return r.cache.Get(key)
+	return r.cache.Get(sanitizeKey(key))
 }
 
 // Set stores a value in Redis
 func (r *RedisStorage) Set(key string, val []byte, exp time.Duration) error {
-	return r.cache.Set(key, val, exp)
+	return r.cache.Set(sanitizeKey(key), val, exp)
 }
 
 // Delete removes a value from Redis
 func (r *RedisStorage) Delete(key string) error {
-	return r.cache.Delete(key)
+	return r.cache.Delete(sanitizeKey(key))
 }
 
 // Reset clears all values from Redis
