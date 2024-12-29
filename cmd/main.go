@@ -10,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
+	"github.com/gofiber/websocket/v2"
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/handler"
@@ -25,6 +26,7 @@ var (
 	imageHandler handler.Image
 	awsHandler   handler.AwsHandler
 	minioHandler handler.MinioHandler
+	wsHandler    handler.WebSocketHandler
 )
 
 func main() {
@@ -52,6 +54,7 @@ func main() {
 	imageService := &service.ImageService{
 		MinioClient: minioClient,
 	}
+	statsService := service.NewStatsService()
 
 	// Initialize cache service
 	cacheService, err := service.NewCacheService("")
@@ -59,9 +62,11 @@ func main() {
 		logger.Fatal().Err(err).Msg("Failed to initialize cache service")
 	}
 
+	// Initialize handlers
 	imageHandler = handler.NewImage(minioClient, awsService, imageService)
 	awsHandler = handler.NewAwsHandler(awsService)
 	minioHandler = handler.NewMinioHandler(minioClient)
+	wsHandler = handler.NewWebSocketHandler(statsService)
 
 	app := fiber.New(fiber.Config{
 		BodyLimit: 25 * 1024 * 2014,
@@ -101,6 +106,23 @@ func main() {
 
 	// Metrics endpoint
 	app.Get("/metrics", observability.MetricsHandler)
+
+	// WebSocket middleware
+	app.Use("/ws", func(c *fiber.Ctx) error {
+		if websocket.IsWebSocketUpgrade(c) {
+			c.Locals("allowed", true)
+			return c.Next()
+		}
+		return fiber.ErrUpgradeRequired
+	})
+
+	// WebSocket endpoint
+	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
+		wsHandler.HandleWebSocket(c)
+	}))
+
+	// Monitoring endpoint
+	app.Get("/monitor", AuthMiddleware, wsHandler.MonitorStats)
 
 	// Aws
 	aws := app.Group("/aws", AuthMiddleware)

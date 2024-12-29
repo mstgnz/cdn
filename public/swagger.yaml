@@ -550,7 +550,7 @@ paths:
   /batch/upload:
     post:
       tags:
-        - Image Operations
+        - Image
       summary: Upload multiple files
       description: Upload multiple files to MinIO and optionally to AWS S3
       security:
@@ -617,7 +617,7 @@ paths:
   /batch/delete:
     post:
       tags:
-        - Image Operations
+        - Image
       summary: Delete multiple files
       description: Delete multiple files from MinIO and optionally from AWS S3
       security:
@@ -676,3 +676,71 @@ paths:
           description: Unauthorized
         "500":
           description: Internal server error
+
+  /ws:
+    get:
+      tags:
+        - monitoring
+      summary: WebSocket connection for real-time monitoring
+      description: Establishes a WebSocket connection for real-time system statistics
+      responses:
+        "101":
+          description: WebSocket connection established
+        "426":
+          description: Upgrade Required
+
+  /monitor:
+    get:
+      tags:
+        - monitoring
+      summary: Get current monitoring statistics
+      description: Returns current system statistics and monitoring data
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Current monitoring statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      timestamp:
+                        type: string
+                        format: date-time
+                      active_uploads:
+                        type: integer
+                        description: Number of active uploads
+                      upload_speed:
+                        type: number
+                        format: float
+                        description: Current upload speed in bytes/second
+                      cache_hit_rate:
+                        type: number
+                        format: float
+                        description: Cache hit rate percentage
+                      cpu_usage:
+                        type: number
+                        format: float
+                        description: CPU usage percentage
+                      memory_usage:
+                        type: number
+                        format: float
+                        description: Memory usage percentage
+                      disk_usage:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                        description: Disk usage by mount point
+                      errors:
+                        type: array
+                        items:
+                          type: string
+                        description: Recent error messages

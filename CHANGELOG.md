@@ -15,6 +15,14 @@ All notable changes to this project will be documented in this file.
   - `/batch/upload` for multiple file uploads
   - `/batch/delete` for multiple file deletions
 - AWS operations made optional via `aws_upload` parameter
+- Real-time monitoring via WebSocket
+  - System metrics (CPU, memory, disk usage)
+  - Active uploads tracking
+  - Cache hit rate monitoring
+  - Upload speed statistics
+  - Error logs streaming
+- REST endpoint for current system stats
+- Batch operations for multiple file uploads/deletions
 
 ### Changed
 - Refactored image processing service for better reliability

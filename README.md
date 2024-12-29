@@ -40,6 +40,15 @@ A high-performance Content Delivery Network (CDN) service built with Go, featuri
 - Structured logging with zerolog
 - Health check endpoints
 - Detailed error tracking
+- Real-time system monitoring via WebSocket
+- Live performance metrics
+  - Active uploads count
+  - Upload speed
+  - Cache hit rate
+  - CPU usage
+  - Memory usage
+  - Disk usage by mount point
+  - Recent error logs
 
 ### Additional Features
 - Environment variable configuration
@@ -159,9 +168,35 @@ curl http://localhost:9090/minio/your-bucket/create \
 
 ### Monitoring
 
-- Metrics: `http://localhost:9090/metrics`
-- Health Check: `http://localhost:9090/health`
-- Swagger Documentation: `http://localhost:9090/swagger`
+1. Connect to WebSocket for real-time updates:
+```javascript
+const ws = new WebSocket('ws://localhost:9090/ws');
+ws.onmessage = (event) => {
+    const stats = JSON.parse(event.data);
+    console.log('System stats:', stats);
+    // Example stats data:
+    // {
+    //   "timestamp": "2024-01-15T10:30:00Z",
+    //   "active_uploads": 5,
+    //   "upload_speed": 1048576, // bytes/sec
+    //   "cache_hit_rate": 85.5,  // percentage
+    //   "cpu_usage": 45.2,       // percentage
+    //   "memory_usage": 60.8,    // percentage
+    //   "disk_usage": {
+    //     "/data": 75,           // percentage
+    //     "/uploads": 45
+    //   },
+    //   "errors": [
+    //     "Failed to process image: invalid format"
+    //   ]
+    // }
+};
+```
+
+2. Get current monitoring stats:
+```bash
+curl -H "Authorization: your-token" http://localhost:9090/monitor
+```
 
 ## Kubernetes Deployment
 
