@@ -24,14 +24,21 @@ type redisCache struct {
 }
 
 func NewCacheService(redisURL string) (CacheService, error) {
+	if redisURL == "" {
+		redisURL = GetEnv("REDIS_URL")
+	}
+
 	opt, err := redis.ParseURL(redisURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse Redis URL: %v", err)
 	}
 
 	client := redis.NewClient(opt)
-	if err := client.Ping(context.Background()).Err(); err != nil {
-		return nil, err
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		return nil, fmt.Errorf("failed to connect to Redis: %v", err)
 	}
 
 	return &redisCache{
@@ -42,26 +49,53 @@ func NewCacheService(redisURL string) (CacheService, error) {
 
 func (c *redisCache) Get(key string) ([]byte, error) {
 	start := time.Now()
+	ctx := context.Background()
+	var err error
+
 	defer func() {
 		duration := time.Since(start).Seconds()
 		observability.StorageOperationDuration.WithLabelValues("cache_get", "redis").Observe(duration)
+		if err != nil {
+			c.logger.Error().Err(err).Str("key", key).Msg("Cache get failed")
+		}
 	}()
 
-	return c.client.Get(context.Background(), key).Bytes()
+	val, err := c.client.Get(ctx, key).Bytes()
+	if err == redis.Nil {
+		return nil, fmt.Errorf("key not found: %s", key)
+	}
+	return val, err
 }
 
 func (c *redisCache) Set(key string, value []byte, expiration time.Duration) error {
 	start := time.Now()
+	ctx := context.Background()
+	var err error
+
 	defer func() {
 		duration := time.Since(start).Seconds()
 		observability.StorageOperationDuration.WithLabelValues("cache_set", "redis").Observe(duration)
+		if err != nil {
+			c.logger.Error().Err(err).Str("key", key).Msg("Cache set failed")
+		}
 	}()
 
-	return c.client.Set(context.Background(), key, value, expiration).Err()
+	err = c.client.Set(ctx, key, value, expiration).Err()
+	return err
 }
 
 func (c *redisCache) Delete(key string) error {
-	return c.client.Del(context.Background(), key).Err()
+	ctx := context.Background()
+	var err error
+
+	defer func() {
+		if err != nil {
+			c.logger.Error().Err(err).Str("key", key).Msg("Cache delete failed")
+		}
+	}()
+
+	err = c.client.Del(ctx, key).Err()
+	return err
 }
 
 func (c *redisCache) GetResizedImage(bucket, path string, width, height uint) ([]byte, error) {
