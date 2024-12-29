@@ -2,7 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cdn-service
-  namespace: default
+  labels:
+    app: cdn-service
 spec:
   replicas: 3
   selector:
@@ -18,36 +19,34 @@ spec:
           image: cdn-service:latest
           imagePullPolicy: Always
           ports:
-            - containerPort: 3000
+            - containerPort: 9090
           env:
-            - name: APP_PORT
-              value: "3000"
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: redis_url
             - name: MINIO_ENDPOINT
               valueFrom:
                 configMapKeyRef:
                   name: cdn-config
                   key: minio_endpoint
-            - name: APP_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: cdn-secrets
-                  key: app_token
           resources:
-            limits:
-              cpu: "1"
-              memory: "1Gi"
             requests:
+              memory: "256Mi"
               cpu: "200m"
+            limits:
               memory: "512Mi"
+              cpu: "500m"
           readinessProbe:
             httpGet:
               path: /health
-              port: 3000
+              port: 9090
             initialDelaySeconds: 5
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /health
-              port: 3000
+              port: 9090
             initialDelaySeconds: 15
             periodSeconds: 20

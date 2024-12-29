@@ -4,6 +4,7 @@ metadata:
   name: cdn-config
   namespace: default
 data:
+  redis_url: "redis://redis-service:6379"
   minio_endpoint: "minio-service:9000"
   minio_use_ssl: "false"
   disable_delete: "false"
