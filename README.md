@@ -175,92 +175,16 @@ For production deployments, we provide comprehensive Kubernetes configurations w
 
 For detailed instructions, see [Kubernetes Deployment Guide](k8s/README.md)
 
-## Testing
+## Documentation
 
-### Prerequisites for Testing
-The project requires ImageMagick for image processing operations. To ensure a consistent test environment, we recommend running tests inside Docker containers.
+For detailed information, please refer to:
 
-### Running Tests
-
-1. Build and start the containers:
-```bash
-docker-compose up -d
-```
-
-2. Run tests inside the container:
-```bash
-# Run all tests
-docker exec cdn-golang go test ./... -v
-
-# Run specific package tests
-docker exec cdn-golang go test ./pkg/worker -v
-docker exec cdn-golang go test ./service -v
-docker exec cdn-golang go test ./handler -v
-```
-
-3. Run tests with coverage:
-```bash
-docker exec cdn-golang go test ./... -coverprofile=coverage.out
-docker exec cdn-golang go tool cover -html=coverage.out -o coverage.html
-```
-
-### Test Environment
-The test container includes:
-- ImageMagick (latest version, dynamically managed)
-- Redis for caching and rate limiting tests
-- MinIO for storage tests
-- Mock AWS services
-- k6 for load testing
-
-### Test Coverage
-- Unit tests with minimum 80% coverage
-- Integration tests for all endpoints
-- Performance tests using k6
-- Load testing scenarios
-- Automated API testing
-
-### Load Testing
-```bash
-# Run basic load test
-k6 run test/performance/load_test.js
-
-# Run stress test
-k6 run --vus 50 --duration 5m test/performance/load_test.js
-
-# Run spike test
-k6 run --vus 100 --duration 10s test/performance/spike_test.js
-```
-
-## Architecture
-
-The service is built with a modular architecture:
-
-- `cmd/`: Application entry point
-- `handler/`: Request handlers
-- `service/`: Core business logic
-- `pkg/`:
-  - `batch/`: Batch processing
-  - `worker/`: Worker pool
-  - `middleware/`: HTTP middlewares
-  - `observability/`: Monitoring and tracing
-  - `config/`: Configuration management
-
-## Performance Optimizations
-
-- Redis caching for resized images
-- Worker pool for concurrent image processing
-- Batch processing for bulk operations
-- Rate limiting with bypass protection
-- Efficient memory management
-- Dynamic resource allocation
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a new Pull Request
+- [Testing Guide](docs/testing.md)
+- [Troubleshooting Guide](docs/troubleshooting.md)
+- [Migration Guide](docs/migration.md)
+- [Changelog](CHANGELOG.md)
+- [Kubernetes Deployment Guide](k8s/README.md)
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 
