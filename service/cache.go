@@ -18,6 +18,7 @@ type CacheService interface {
 	Delete(key string) error
 	GetResizedImage(bucket, path string, width, height uint) ([]byte, error)
 	SetResizedImage(bucket, path string, width, height uint, data []byte) error
+	FlushAll() error
 }
 
 type redisCache struct {
@@ -155,4 +156,27 @@ func (c *redisCache) SetResizedImage(bucket, path string, width, height uint, da
 	key := fmt.Sprintf("resize:%s:%s:%d:%d", bucket, path, width, height)
 	// Cache for 24 hours
 	return c.Set(key, data, 24*time.Hour)
+}
+
+func (c *redisCache) FlushAll() error {
+	start := time.Now()
+	ctx := context.Background()
+	var err error
+
+	defer func() {
+		duration := time.Since(start).Seconds()
+		status := "success"
+		if err != nil {
+			status = "error"
+		}
+		observability.CacheOperations.WithLabelValues("flush_all", status).Inc()
+		observability.CacheOperationDuration.WithLabelValues("flush_all", status).Observe(duration)
+
+		if err != nil {
+			c.logger.Error().Err(err).Msg("Cache flush_all failed")
+		}
+	}()
+
+	err = c.client.FlushAll(ctx).Err()
+	return err
 }

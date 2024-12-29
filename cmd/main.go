@@ -64,8 +64,8 @@ func main() {
 		BodyLimit: 25 * 1024 * 2014,
 	})
 
-	// Global rate limiter - 100 requests per minute
-	app.Use(middleware.DefaultRateLimiter())
+	// Global rate limiter - 100 requests per minute with IP + Token based protection
+	app.Use(middleware.DefaultAdvancedRateLimiter())
 
 	// CORS middleware
 	app.Use(cors.New(cors.Config{
@@ -130,7 +130,7 @@ func main() {
 	// Upload endpoints with stricter rate limit - 10 requests per minute
 	if !disableUpload {
 		uploadGroup := app.Group("/")
-		uploadGroup.Use(middleware.NewRateLimiter(10, time.Minute))
+		uploadGroup.Use(middleware.NewAdvancedRateLimiter(10, time.Minute))
 		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
 		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadWithUrl)
 	}

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"crypto/subtle"
+	"fmt"
 	"strings"
 	"time"
 
@@ -171,4 +172,53 @@ func DeleteLimiter(cfg RateLimitConfig) fiber.Handler {
 			})
 		},
 	})
+}
+
+// RateLimitKey generates a unique key for rate limiting based on IP and token
+func RateLimitKey(c *fiber.Ctx) string {
+	// Get client IP
+	ip := c.IP()
+
+	// Get token from header
+	token := c.Get("Authorization")
+	token = strings.TrimPrefix(token, "Bearer ")
+
+	// If no token, use IP only
+	if token == "" {
+		return ip
+	}
+
+	// Combine IP and token for the key
+	return fmt.Sprintf("%s:%s", ip, token)
+}
+
+// NewAdvancedRateLimiter creates a new rate limiter middleware with Redis storage
+func NewAdvancedRateLimiter(max int, duration time.Duration) fiber.Handler {
+	storage, err := NewRedisStorage()
+	if err != nil {
+		panic(err)
+	}
+
+	config := limiter.Config{
+		Max:          max,
+		Expiration:   duration,
+		KeyGenerator: RateLimitKey,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"status":  false,
+				"message": "Rate limit exceeded",
+				"data": fiber.Map{
+					"wait": duration.String(),
+				},
+			})
+		},
+		Storage: storage,
+	}
+
+	return limiter.New(config)
+}
+
+// DefaultAdvancedRateLimiter returns a default rate limiter middleware (100 requests per minute)
+func DefaultAdvancedRateLimiter() fiber.Handler {
+	return NewAdvancedRateLimiter(100, time.Minute)
 }
