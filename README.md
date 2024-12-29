@@ -48,3 +48,17 @@ This project is open-source, and contributions are welcome. Feel free to contrib
 
 ### License
 This project is licensed under the Apache License. See the [LICENSE](LICENSE) file for more details.
+
+
+### Kubernetes Deployment
+
+The service can be deployed on Kubernetes for production environments. We provide comprehensive Kubernetes manifests and configurations for:
+
+- Horizontal scaling (3-10 pods)
+- Resource management
+- Health monitoring
+- Automatic scaling based on CPU and Memory usage
+- Load balancing
+- Secrets management
+
+For detailed Kubernetes deployment instructions and best practices, see [Kubernetes Deployment Guide](k8s/README.md).
