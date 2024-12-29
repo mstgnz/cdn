@@ -89,6 +89,16 @@ func main() {
 		return c.SendFile("./public/swagger.yaml")
 	})
 
+	// Health check endpoint
+	healthChecker := handler.NewHealthChecker(minioClient, awsService, cacheService)
+	app.Get("/health", healthChecker.HealthCheck)
+
+	// Prometheus middleware
+	app.Use(observability.PrometheusMiddleware())
+
+	// Metrics endpoint
+	app.Get("/metrics", observability.MetricsHandler)
+
 	// Aws
 	aws := app.Group("/aws", AuthMiddleware)
 	aws.Get("/bucket-list", awsHandler.BucketList)
@@ -131,16 +141,6 @@ func main() {
 	app.Get("/", func(c *fiber.Ctx) error {
 		return c.SendFile("./public/index.html")
 	})
-
-	// Health check endpoint
-	healthChecker := handler.NewHealthChecker(minioClient, awsService, cacheService)
-	app.Get("/health", healthChecker.HealthCheck)
-
-	// Prometheus middleware
-	app.Use(observability.PrometheusMiddleware())
-
-	// Metrics endpoint
-	app.Get("/metrics", observability.MetricsHandler)
 
 	port := fmt.Sprintf(":%s", config.GetEnvOrDefault("APP_PORT", "9090"))
 	if err := app.Listen(port); err != nil {
