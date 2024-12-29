@@ -1,64 +1,203 @@
-## CDN API with MinIO and Aws
-#### Create your own Cdn service on Minio and Aws.
+# CDN Service
 
-### Overview
+A high-performance Content Delivery Network (CDN) service built with Go, featuring image processing, caching, and multi-cloud storage support.
 
-This project allows you to create your own Content Delivery Network (CDN) service using MinIO and AWS S3. You can use this CDN service to upload, retrieve, and delete files.
+## Features
+
+### Storage
+- Multi-cloud storage support (MinIO, AWS S3)
+- Glacier archive support
+- Bucket management
+- Automatic file type detection
+- Secure file handling
+
+### Image Processing
+- Real-time image resizing
+- Batch processing capabilities
+- Worker pool for concurrent operations
+- Support for multiple image formats
+- URL-based image processing
+
+### Performance
+- Redis caching layer
+- Batch processing with configurable sizes
+- Worker pool for parallel processing
+- Rate limiting and request throttling
+- Performance metrics and monitoring
+
+### Security
+- Token-based authentication
+- CORS configuration
+- Rate limiting per endpoint
+- Request size limitations
+- Trusted proxy support
+
+### Monitoring & Observability
+- Prometheus metrics
+- Jaeger tracing integration
+- Structured logging with zerolog
+- Health check endpoints
+- Detailed error tracking
+
+### Additional Features
+- Environment variable configuration
+- Hot reload for configuration changes
+- Swagger documentation
+- Docker support
+- Graceful shutdown
+
+## Quick Start
 
 ### Prerequisites
-
-* [Docker](https://www.docker.com/): You will need Docker to run this project.
-* [Aws S3](https://docs.aws.amazon.com/s3/): In this project s3 backup is currently used (optional)
-* [Minio](https://min.io/docs/minio/container/index.html): The project runs entirely on Minio.
-* [ImageMagick](https://imagemagick.org/index.php): currently only resize feature is active. Only image files
-
+- Go 1.21+
+- Docker and Docker Compose
+- MinIO Server (or AWS S3 access)
+- Redis Server
 
 ### Installation
 
-Follow these steps to set up and run the project:
-
-1- Clone the repository:
+1. Clone the repository:
 ```bash
 git clone https://github.com/mstgnz/cdn.git
+cd cdn
 ```
-2- Rename the .env.example file to .env and enter the required information.
-3- Start the project with Docker Compose:
+
+2. Copy the example environment file:
+```bash
+cp .env.example .env
+```
+
+3. Start the services using Docker Compose:
 ```bash
 docker-compose up -d
 ```
-OR
-```bash
-make
+
+### Configuration
+
+Edit the `.env` file with your settings:
+
+```env
+APP_PORT=9090
+APP_NAME=cdn
+TOKEN=your-secure-token
+
+# MinIO Configuration
+MINIO_ENDPOINT=localhost:9000
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
+MINIO_USE_SSL=false
+
+# AWS Configuration (optional)
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
+AWS_REGION=your-region
+
+# Redis Configuration
+REDIS_URL=redis://localhost:6379
+
+# Feature Flags
+DISABLE_DELETE=false
+DISABLE_UPLOAD=false
+DISABLE_GET=false
 ```
 
-Now, you can access the following services:
-* MinIO: http://localhost:9001
-* Go API: http://localhost:9090
+### API Usage
 
+#### Image Operations
 
-### Usage
-- All usage: From the [Swagger UI](http://localhost:9090/swagger) user interface you can see and try all the uses. Or you can review [swagger.yaml](/public/swagger.yaml).
-- You can submit width and height if you want it to be resized during upload. If you send only width, the height will be assigned proportionally. If you send only the height, the width will be assigned proportionally. The resizing process is optional.
-- Get: if you use only width, height = will be proportioned according to the original size. If you use only height, width = will be proportioned according to the original size.
+1. Upload an image:
+```bash
+curl -X POST http://localhost:9090/upload \
+  -H "Authorization: your-token" \
+  -F "file=@image.jpg" \
+  -F "bucket=your-bucket" \
+  -F "path=your/path"
+```
 
+2. Get an image with resizing:
+```bash
+# Original size
+http://localhost:9090/your-bucket/image.jpg
 
-### Contributing
-This project is open-source, and contributions are welcome. Feel free to contribute or provide feedback of any kind.
+# Resize with width
+http://localhost:9090/your-bucket/w:300/image.jpg
 
+# Resize with height
+http://localhost:9090/your-bucket/h:200/image.jpg
 
-### License
-This project is licensed under the Apache License. See the [LICENSE](LICENSE) file for more details.
+# Resize with both
+http://localhost:9090/your-bucket/w:300/h:200/image.jpg
+```
 
+3. Delete an image:
+```bash
+curl -X DELETE http://localhost:9090/your-bucket/image.jpg \
+  -H "Authorization: your-token"
+```
 
-### Kubernetes Deployment
+#### Bucket Operations
 
-The service can be deployed on Kubernetes for production environments. We provide comprehensive Kubernetes manifests and configurations for:
+1. List buckets:
+```bash
+curl http://localhost:9090/minio/bucket-list \
+  -H "Authorization: your-token"
+```
 
-- Horizontal scaling (3-10 pods)
-- Resource management
-- Health monitoring
-- Automatic scaling based on CPU and Memory usage
-- Load balancing
+2. Create bucket:
+```bash
+curl http://localhost:9090/minio/your-bucket/create \
+  -H "Authorization: your-token"
+```
+
+### Monitoring
+
+- Metrics: `http://localhost:9090/metrics`
+- Health Check: `http://localhost:9090/health`
+- Swagger Documentation: `http://localhost:9090/swagger`
+
+## Kubernetes Deployment
+
+For production deployments, we provide comprehensive Kubernetes configurations with:
+- Horizontal Pod Autoscaling (3-10 pods)
+- Resource quotas and limits
+- Health monitoring and readiness probes
+- Load balancing strategies
 - Secrets management
+- Persistent volume claims
 
-For detailed Kubernetes deployment instructions and best practices, see [Kubernetes Deployment Guide](k8s/README.md).
+For detailed instructions, see [Kubernetes Deployment Guide](k8s/README.md)
+
+
+## Architecture
+
+The service is built with a modular architecture:
+
+- `cmd/`: Application entry point
+- `handler/`: Request handlers
+- `service/`: Core business logic
+- `pkg/`:
+  - `batch/`: Batch processing
+  - `worker/`: Worker pool
+  - `middleware/`: HTTP middlewares
+  - `observability/`: Monitoring and tracing
+  - `config/`: Configuration management
+
+## Performance Optimizations
+
+- Redis caching for resized images
+- Worker pool for concurrent image processing
+- Batch processing for bulk operations
+- Rate limiting to prevent overload
+- Efficient memory management
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
+
+## License
+
+This project is licensed under the Apache License - see the [LICENSE](LICENSE) file for details.
