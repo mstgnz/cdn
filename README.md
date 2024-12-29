@@ -167,6 +167,41 @@ For production deployments, we provide comprehensive Kubernetes configurations w
 
 For detailed instructions, see [Kubernetes Deployment Guide](k8s/README.md)
 
+## Testing
+
+### Prerequisites for Testing
+The project requires ImageMagick for image processing operations. To ensure a consistent test environment, we recommend running tests inside Docker containers.
+
+### Running Tests
+
+1. Build and start the containers:
+```bash
+docker-compose up -d
+```
+
+2. Run tests inside the container:
+```bash
+# Run all tests
+docker exec cdn-golang go test ./... -v
+
+# Run specific package tests
+docker exec cdn-golang go test ./pkg/worker -v
+docker exec cdn-golang go test ./service -v
+docker exec cdn-golang go test ./handler -v
+```
+
+3. Run tests with coverage:
+```bash
+docker exec cdn-golang go test ./... -coverprofile=coverage.out
+docker exec cdn-golang go tool cover -html=coverage.out -o coverage.html
+```
+
+### Test Environment
+The test container includes:
+- ImageMagick for image processing
+- Redis for caching tests
+- MinIO for storage tests
+- Mock AWS services
 
 ## Architecture
 
