@@ -292,6 +292,49 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+    delete:
+      summary: Delete file
+      description: |
+        Deletes a file from the specified bucket.
+        - Requires authentication
+        - Can optionally delete from AWS S3 as well
+      tags:
+        - File Operations
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Bucket name
+        - name: path
+          in: path
+          required: true
+          schema:
+            type: string
+          description: File path to delete
+        - name: aws_delete
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Whether to delete from AWS S3 as well
+      responses:
+        "200":
+          description: File deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized access
+        "404":
+          description: File not found
 
   /{bucket}/w:{width}/h:{height}/{path}:
     get:
@@ -506,18 +549,25 @@ paths:
 
   /batch/delete:
     post:
+      summary: Batch delete files
+      description: |
+        Deletes multiple files in a single request.
+        - Requires authentication
+        - Can optionally delete from AWS S3
+        - Returns individual status for each file
       tags:
-        - Image
-      summary: Delete multiple files
-      description: Delete multiple files from MinIO and optionally from AWS S3
+        - File Operations
       security:
-        - ApiKeyAuth: []
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - bucket
+                - files
               properties:
                 bucket:
                   type: string
@@ -532,12 +582,9 @@ paths:
                   type: boolean
                   description: Whether to delete from AWS S3 as well
                   default: false
-              required:
-                - bucket
-                - files
       responses:
         "200":
-          description: Successful batch deletion
+          description: Batch deletion result
           content:
             application/json:
               schema:
@@ -561,9 +608,9 @@ paths:
                         aws_error:
                           type: string
         "400":
-          description: Bad request
+          description: Invalid request
         "401":
-          description: Unauthorized
+          description: Unauthorized access
         "500":
           description: Internal server error
 
@@ -622,3 +669,99 @@ paths:
                         items:
                           type: string
                         description: Recent error messages
+
+  /upload-url:
+    post:
+      summary: Upload file from URL
+      description: |
+        Downloads and uploads a file from a given URL.
+        - Maximum file size: 25MB
+        - Supports various file formats
+        - Can optionally upload to AWS S3
+      tags:
+        - File Operations
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - url
+                - bucket
+              properties:
+                url:
+                  type: string
+                  format: uri
+                  description: Source URL to download from
+                bucket:
+                  type: string
+                  description: Target bucket name
+                path:
+                  type: string
+                  description: Target path (optional)
+                aws_upload:
+                  type: boolean
+                  description: Whether to upload to AWS S3 as well
+                  default: false
+      responses:
+        "200":
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: Invalid request or URL
+        "401":
+          description: Unauthorized access
+        "413":
+          description: File too large
+
+  /resize:
+    post:
+      summary: Resize image
+      description: |
+        Resizes an uploaded image to specified dimensions.
+        - Maintains aspect ratio if only width or height is specified
+        - Supports common image formats
+        - Returns resized image directly
+      tags:
+        - Image Operations
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file to resize
+                width:
+                  type: integer
+                  minimum: 1
+                  maximum: 2000
+                  description: Target width in pixels
+                height:
+                  type: integer
+                  minimum: 1
+                  maximum: 2000
+                  description: Target height in pixels
+      responses:
+        "200":
+          description: Resized image
+          content:
+            image/*:
+              schema:
+                type: string
+                format: binary
+        "400":
+          description: Invalid request or image format
+        "413":
+          description: Image too large
