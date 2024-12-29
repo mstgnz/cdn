@@ -267,6 +267,8 @@ paths:
                   type: integer
                 aws_upload:
                   type: boolean
+                  description: Upload to AWS S3
+                  default: false
               required:
                 - file
                 - bucket
@@ -304,6 +306,7 @@ paths:
                 aws_upload:
                   type: boolean
                   description: Upload to AWS S3
+                  default: false
                 path:
                   type: string
                   description: Optional path prefix for the file
