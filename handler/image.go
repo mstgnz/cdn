@@ -363,7 +363,10 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 	// Generate random name and construct object name
 	randomName := service.RandomName(10)
 	imageName := randomName + "." + parseFileName[1]
-	objectName := path + "/" + imageName
+	objectName := imageName
+	if path != "" {
+		objectName = path + "/" + imageName
+	}
 	contentType := file.Header["Content-Type"][0]
 	fileSize := file.Size
 
