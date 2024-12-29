@@ -5,13 +5,14 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/mstgnz/cdn/pkg/config"
 )
 
 func MinioClient() *minio.Client {
 
-	endpoint := GetEnv("MINIO_ENDPOINT")
-	accessKey := GetEnv("MINIO_ROOT_USER")
-	secretKey := GetEnv("MINIO_ROOT_PASSWORD")
+	endpoint := config.GetEnvOrDefault("MINIO_ENDPOINT", "localhost:9000")
+	accessKey := config.GetEnvOrDefault("MINIO_ROOT_USER", "minioadmin")
+	secretKey := config.GetEnvOrDefault("MINIO_ROOT_PASSWORD", "minioadmin")
 
 	minioClient, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),

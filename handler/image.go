@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/pkg/batch"
+	"github.com/mstgnz/cdn/pkg/config"
 	"github.com/mstgnz/cdn/pkg/worker"
 	"github.com/mstgnz/cdn/service"
 )
@@ -302,7 +303,7 @@ func (i image) UploadImageWithUrl(c *fiber.Ctx) error {
 	// Upload with PutObject
 	minioResult, err := i.minioClient.PutObject(ctx, bucket, objectName, res.Body, int64(fileSize), minio.PutObjectOptions{ContentType: contentType})
 
-	url = service.GetEnv("APP_URL")
+	url = config.GetEnvOrDefault("APP_URL", "http://localhost:9090")
 	url = strings.TrimSuffix(url, "/")
 	link := url + "/" + bucket + "/" + objectName
 
@@ -408,7 +409,7 @@ func (i image) commonUpload(c *fiber.Ctx, ctx context.Context, path, bucket stri
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
-	url := service.GetEnv("APP_URL")
+	url := config.GetEnvOrDefault("APP_URL", "http://localhost:9090")
 	url = strings.TrimSuffix(url, "/")
 	link := url + "/" + bucket + "/" + objectName
 

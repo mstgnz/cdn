@@ -15,6 +15,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
+	"github.com/mstgnz/cdn/pkg/config"
 )
 
 const (
@@ -22,10 +23,6 @@ const (
 	FormsType   = "forms"
 	HeadersType = "headers"
 )
-
-func GetEnv(key string) string {
-	return os.Getenv(key)
-}
 
 func ReadEnvAndSet() error {
 	envs, err := godotenv.Read(".env")
@@ -39,21 +36,6 @@ func ReadEnvAndSet() error {
 		}
 	}
 	return nil
-}
-
-// GetBool fetches an env var meant to be a bool and follows this logic to
-// determine the value of that bool:
-// if "", return false
-// strconv.ParseBool() otherwise:
-// if that errors, exit;
-// otherwise return the value
-func GetBool(key string) bool {
-	val := os.Getenv(key)
-	v, err := strconv.ParseBool(val)
-	if err != nil {
-		log.Fatalf("invalid boolean environment variable '%s': %v", val, err)
-	}
-	return v
 }
 
 func RandomName(length int) string {
@@ -125,7 +107,7 @@ func DownloadFile(filepath string, url string) error {
 
 func CheckToken(c *fiber.Ctx) error {
 	getToken := strings.Split(c.Get("Authorization"), " ")
-	if len(getToken) != 2 || !strings.EqualFold(getToken[1], GetEnv("TOKEN")) {
+	if len(getToken) != 2 || !strings.EqualFold(getToken[1], config.GetEnvOrDefault("TOKEN", "")) {
 		return errors.New("invalid token")
 	}
 	return nil

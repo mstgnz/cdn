@@ -13,6 +13,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/handler"
+	"github.com/mstgnz/cdn/pkg/config"
 	"github.com/mstgnz/cdn/pkg/middleware"
 	"github.com/mstgnz/cdn/pkg/observability"
 	"github.com/mstgnz/cdn/service"
@@ -76,9 +77,9 @@ func main() {
 		File: "./public/favicon.png",
 	}))
 
-	disableDelete := service.GetBool("DISABLE_DELETE")
-	disableUpload := service.GetBool("DISABLE_UPLOAD")
-	disableGet := service.GetBool("DISABLE_GET")
+	disableDelete := config.GetEnvAsBoolOrDefault("DISABLE_DELETE", false)
+	disableUpload := config.GetEnvAsBoolOrDefault("DISABLE_UPLOAD", false)
+	disableGet := config.GetEnvAsBoolOrDefault("DISABLE_GET", false)
 
 	// Swagger
 	app.Get("/swagger", func(c *fiber.Ctx) error {
@@ -141,7 +142,7 @@ func main() {
 	// Metrics endpoint
 	app.Get("/metrics", observability.MetricsHandler)
 
-	port := fmt.Sprintf(":%s", service.GetEnv("APP_PORT"))
+	port := fmt.Sprintf(":%s", config.GetEnvOrDefault("APP_PORT", "9090"))
 	if err := app.Listen(port); err != nil {
 		logger.Fatal().Err(err).Msg("Failed to start server")
 	}

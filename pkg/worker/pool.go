@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mstgnz/cdn/pkg/config"
 	"github.com/mstgnz/cdn/pkg/observability"
 	"github.com/rs/zerolog"
 )
@@ -41,10 +42,10 @@ type Config struct {
 // DefaultConfig returns default configuration
 func DefaultConfig() Config {
 	return Config{
-		Workers:    5,
-		QueueSize:  10,
-		MaxRetries: 3,
-		RetryDelay: time.Second,
+		Workers:    config.GetEnvAsIntOrDefault("WORKER_POOL_SIZE", 5),
+		QueueSize:  config.GetEnvAsIntOrDefault("WORKER_QUEUE_SIZE", 10),
+		MaxRetries: config.GetEnvAsIntOrDefault("WORKER_MAX_RETRIES", 3),
+		RetryDelay: time.Duration(config.GetEnvAsIntOrDefault("WORKER_RETRY_DELAY_MS", 1000)) * time.Millisecond,
 	}
 }
 

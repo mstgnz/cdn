@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/mstgnz/cdn/pkg/config"
 	"github.com/mstgnz/cdn/pkg/observability"
 	"github.com/rs/zerolog"
 )
@@ -25,7 +26,7 @@ type redisCache struct {
 
 func NewCacheService(redisURL string) (CacheService, error) {
 	if redisURL == "" {
-		redisURL = GetEnv("REDIS_URL")
+		redisURL = config.GetEnvOrDefault("REDIS_URL", "redis://localhost:6379")
 	}
 
 	opt, err := redis.ParseURL(redisURL)

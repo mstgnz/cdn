@@ -28,46 +28,6 @@ func TestDownloadFile(t *testing.T) {
 	}
 }
 
-func TestGetBool(t *testing.T) {
-	type args struct {
-		key string
-	}
-	tests := []struct {
-		args args
-		want bool
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			if got := GetBool(tt.args.key); got != tt.want {
-				t.Errorf("GetBool() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestGetEnv(t *testing.T) {
-	type args struct {
-		key string
-	}
-	tests := []struct {
-		args args
-		want string
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			if got := GetEnv(tt.args.key); got != tt.want {
-				t.Errorf("GetEnv() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestImageToByte(t *testing.T) {
 	type args struct {
 		img string

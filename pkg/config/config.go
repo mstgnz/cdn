@@ -71,50 +71,50 @@ func Load() (*Config, error) {
 
 	// App Config
 	config.App = AppConfig{
-		Name:  getEnvOrDefault("APP_NAME", "cdn"),
-		Port:  getEnvAsIntOrDefault("APP_PORT", 9090),
-		URL:   getEnvOrDefault("APP_URL", "http://localhost:9090"),
-		Token: mustGetEnv("TOKEN"),
+		Name:  GetEnvOrDefault("APP_NAME", "cdn"),
+		Port:  GetEnvAsIntOrDefault("APP_PORT", 9090),
+		URL:   GetEnvOrDefault("APP_URL", "http://localhost:9090"),
+		Token: GetEnvOrDefault("TOKEN", ""),
 	}
 
 	// MinIO Config
 	config.Minio = MinioConfig{
-		Endpoint: mustGetEnv("MINIO_ENDPOINT"),
-		User:     mustGetEnv("MINIO_ROOT_USER"),
-		Password: mustGetEnv("MINIO_ROOT_PASSWORD"),
-		UseSSL:   getEnvAsBoolOrDefault("MINIO_USE_SSL", false),
+		Endpoint: GetEnvOrDefault("MINIO_ENDPOINT", ""),
+		User:     GetEnvOrDefault("MINIO_ROOT_USER", ""),
+		Password: GetEnvOrDefault("MINIO_ROOT_PASSWORD", ""),
+		UseSSL:   GetEnvAsBoolOrDefault("MINIO_USE_SSL", false),
 	}
 
 	// AWS Config
 	config.AWS = AWSConfig{
-		AccessKeyID:     mustGetEnv("AWS_ACCESS_KEY_ID"),
-		SecretAccessKey: mustGetEnv("AWS_SECRET_ACCESS_KEY"),
-		SessionToken:    getEnvOrDefault("AWS_SESSION_TOKEN", ""),
-		Region:          mustGetEnv("AWS_REGION"),
-		Bucket:          getEnvOrDefault("AWS_BUCKET", ""),
+		AccessKeyID:     GetEnvOrDefault("AWS_ACCESS_KEY_ID", ""),
+		SecretAccessKey: GetEnvOrDefault("AWS_SECRET_ACCESS_KEY", ""),
+		SessionToken:    GetEnvOrDefault("AWS_SESSION_TOKEN", ""),
+		Region:          GetEnvOrDefault("AWS_REGION", ""),
+		Bucket:          GetEnvOrDefault("AWS_BUCKET", ""),
 	}
 
 	// Redis Config
 	config.Redis = RedisConfig{
-		URL: getEnvOrDefault("REDIS_URL", mustGetEnv("REDIS_URL")),
+		URL: GetEnvOrDefault("REDIS_URL", GetEnvOrDefault("REDIS_URL", "redis://localhost:6379")),
 	}
 
 	// Worker Config
 	config.Worker = WorkerConfig{
-		PoolSize:      getEnvAsIntOrDefault("WORKER_POOL_SIZE", 5),
-		QueueSize:     getEnvAsIntOrDefault("WORKER_QUEUE_SIZE", 10),
-		MaxRetries:    getEnvAsIntOrDefault("WORKER_MAX_RETRIES", 3),
-		RetryDelay:    time.Duration(getEnvAsIntOrDefault("WORKER_RETRY_DELAY_MS", 1000)) * time.Millisecond,
-		BatchSize:     getEnvAsIntOrDefault("WORKER_BATCH_SIZE", 10),
-		FlushTimeout:  time.Duration(getEnvAsIntOrDefault("WORKER_FLUSH_TIMEOUT_MS", 5000)) * time.Millisecond,
-		MaxConcurrent: getEnvAsIntOrDefault("WORKER_MAX_CONCURRENT", 5),
+		PoolSize:      GetEnvAsIntOrDefault("WORKER_POOL_SIZE", 5),
+		QueueSize:     GetEnvAsIntOrDefault("WORKER_QUEUE_SIZE", 10),
+		MaxRetries:    GetEnvAsIntOrDefault("WORKER_MAX_RETRIES", 3),
+		RetryDelay:    time.Duration(GetEnvAsIntOrDefault("WORKER_RETRY_DELAY_MS", 1000)) * time.Millisecond,
+		BatchSize:     GetEnvAsIntOrDefault("WORKER_BATCH_SIZE", 10),
+		FlushTimeout:  time.Duration(GetEnvAsIntOrDefault("WORKER_FLUSH_TIMEOUT_MS", 5000)) * time.Millisecond,
+		MaxConcurrent: GetEnvAsIntOrDefault("WORKER_MAX_CONCURRENT", 5),
 	}
 
 	// Feature Config
 	config.Features = FeatureConfig{
-		DisableDelete: getEnvAsBoolOrDefault("DISABLE_DELETE", false),
-		DisableUpload: getEnvAsBoolOrDefault("DISABLE_UPLOAD", false),
-		DisableGet:    getEnvAsBoolOrDefault("DISABLE_GET", false),
+		DisableDelete: GetEnvAsBoolOrDefault("DISABLE_DELETE", false),
+		DisableUpload: GetEnvAsBoolOrDefault("DISABLE_UPLOAD", false),
+		DisableGet:    GetEnvAsBoolOrDefault("DISABLE_GET", false),
 	}
 
 	return config, nil
@@ -161,15 +161,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-func mustGetEnv(key string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		panic(fmt.Sprintf("environment variable %s is required", key))
-	}
-	return value
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
+func GetEnvOrDefault(key, defaultValue string) string {
 	value := os.Getenv(key)
 	if value == "" {
 		return defaultValue
@@ -177,7 +169,7 @@ func getEnvOrDefault(key, defaultValue string) string {
 	return value
 }
 
-func getEnvAsIntOrDefault(key string, defaultValue int) int {
+func GetEnvAsIntOrDefault(key string, defaultValue int) int {
 	value := os.Getenv(key)
 	if value == "" {
 		return defaultValue
@@ -189,7 +181,7 @@ func getEnvAsIntOrDefault(key string, defaultValue int) int {
 	return intValue
 }
 
-func getEnvAsBoolOrDefault(key string, defaultValue bool) bool {
+func GetEnvAsBoolOrDefault(key string, defaultValue bool) bool {
 	value := os.Getenv(key)
 	if value == "" {
 		return defaultValue

@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	cnf "github.com/mstgnz/cdn/pkg/config"
 )
 
 // https://docs.aws.amazon.com/amazonglacier/latest/dev/introduction.html
@@ -34,7 +35,7 @@ type awsService struct {
 
 func NewAwsService() AwsService {
 	cfg, _ := config.LoadDefaultConfig(context.TODO(), config.WithCredentialsProvider(
-		credentials.NewStaticCredentialsProvider(GetEnv("AWS_ACCESS_KEY_ID"), GetEnv("AWS_SECRET_ACCESS_KEY"), "")))
+		credentials.NewStaticCredentialsProvider(cnf.GetEnvOrDefault("AWS_ACCESS_KEY_ID", ""), cnf.GetEnvOrDefault("AWS_SECRET_ACCESS_KEY", ""), "")))
 	return &awsService{cfg: cfg}
 }
 
