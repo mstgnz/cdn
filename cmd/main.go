@@ -156,6 +156,10 @@ func main() {
 
 	// Minio
 	if !disableGet {
+		/*
+			- The width and height parameters use the w and h prefix to avoid conflicts with numeric values in file paths.
+			- Example: a file path like `photos/2024/01/30/image.jpg` can be misinterpreted as resizing parameters.
+		*/
 		app.Get("/:bucket/w::width/h::height/*", imageHandler.GetImage)
 		app.Get("/:bucket/w::width/*", imageHandler.GetImage)
 		app.Get("/:bucket/h::height/*", imageHandler.GetImage)
