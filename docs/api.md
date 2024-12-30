@@ -28,7 +28,7 @@ X-RateLimit-Reset: 1640995200
 ### Success Response
 ```json
 {
-    "status": true,
+    "success": true,
     "message": "success",
     "data": {
         "minioUpload": "Minio Successfully Uploaded size {size}",
@@ -45,7 +45,7 @@ X-RateLimit-Reset: 1640995200
 ### Error Response
 ```json
 {
-    "status": false,
+    "success": false,
     "message": "Error description",
     "error": {
         "code": "ERROR_CODE",
@@ -67,13 +67,17 @@ Returns health status of all services (MinIO, AWS, Cache).
 Response:
 ```json
 {
-    "status": "healthy",
-    "services": {
-        "minio": "connected",
-        "aws": "connected",
-        "cache": "connected"
-    },
-    "timestamp": "2024-01-15T10:30:00Z"
+    "success": true,
+    "message": "Health check",
+    "data": {
+        "status": "healthy",
+        "services": {
+            "minio": "connected",
+            "aws": "connected",
+            "cache": "connected"
+        },
+        "timestamp": "2024-01-15T10:30:00Z"
+    }
 }
 ```
 
@@ -98,7 +102,7 @@ Returns current system statistics.
 Response:
 ```json
 {
-    "status": true,
+    "success": true,
     "message": "success",
     "data": {
         "timestamp": "2024-01-15T10:30:00Z",
@@ -172,7 +176,7 @@ Body:
 Response:
 ```json
 {
-    "status": true,
+    "success": true,
     "message": "Batch upload successful",
     "data": [
         {
@@ -258,7 +262,7 @@ Body:
 Response:
 ```json
 {
-    "status": true,
+    "success": true,
     "message": "Batch deletion successful",
     "data": [
         {
