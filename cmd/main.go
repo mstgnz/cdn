@@ -149,7 +149,7 @@ func main() {
 	io.Get("/bucket-list", minioHandler.BucketList)
 	io.Get("/:bucket/exists", minioHandler.BucketExists)
 	io.Get("/:bucket/create", minioHandler.CreateBucket)
-	io.Get("/:bucket/delete", minioHandler.RemoveBucket)
+	io.Delete("/:bucket/delete", minioHandler.RemoveBucket)
 
 	// resize
 	app.Post("/resize", imageHandler.ResizeImage)
