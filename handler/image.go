@@ -80,7 +80,7 @@ type BatchDeleteRequest struct {
 	AWSDelete bool     `json:"aws_delete"`
 }
 
-func NewImage(minioClient *minio.Client, awsService service.AwsService, imageService *service.ImageService) Image {
+func NewImage(minioClient *minio.Client, awsService service.AwsService, imageService *service.ImageService, cacheService service.CacheService) Image {
 	// Initialize worker pool with 5 workers
 	workerConfig := worker.DefaultConfig()
 	workerConfig.Workers = 5
@@ -92,7 +92,7 @@ func NewImage(minioClient *minio.Client, awsService service.AwsService, imageSer
 		awsService:   awsService,
 		imageService: imageService,
 		workerPool:   wp,
-		cache:        nil,
+		cache:        cacheService,
 	}
 
 	// Initialize batch processor with default config
@@ -126,8 +126,8 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		resize, width, height = service.GetWidthAndHeight(c, service.ParamsType)
 	}
 
-	// Try to get from cache if resize is requested
-	if resize {
+	// Try to get from cache if resize is requested and cache service is available
+	if resize && i.cache != nil {
 		if cachedImage, err := i.cache.GetResizedImage(bucket, objectName, width, height); err == nil {
 			c.Set("Content-Type", http.DetectContentType(cachedImage))
 			return c.Send(cachedImage)
@@ -158,9 +158,11 @@ func (i image) GetImage(c *fiber.Ctx) error {
 
 	if resize {
 		resizedImage := i.imageService.ImagickResize(getByte, width, height)
-		// Cache the resized image
-		if err := i.cache.SetResizedImage(bucket, objectName, width, height, resizedImage); err != nil {
-			log.Printf("Failed to cache resized image: %v", err)
+		// Cache the resized image if cache service is available
+		if i.cache != nil {
+			if err := i.cache.SetResizedImage(bucket, objectName, width, height, resizedImage); err != nil {
+				log.Printf("Failed to cache resized image: %v", err)
+			}
 		}
 		return c.Send(resizedImage)
 	}

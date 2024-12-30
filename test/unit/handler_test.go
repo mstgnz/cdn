@@ -90,8 +90,9 @@ func TestUploadImage(t *testing.T) {
 	mockMinio := setupMockMinio()
 	mockAws := &MockAwsService{}
 	mockImageService := &service.ImageService{}
+	mockCache := &MockCacheService{}
 
-	imageHandler := handler.NewImage(mockMinio, mockAws, mockImageService)
+	imageHandler := handler.NewImage(mockMinio, mockAws, mockImageService, mockCache)
 	app.Post("/upload", imageHandler.UploadImage)
 
 	// Test cases

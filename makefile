@@ -59,13 +59,16 @@ create_volume:
 	fi
 
 redis-cli:
-	docker exec -it cdn_redis redis-cli
-
+	docker exec -it cdn-redis redis-cli
 redis-logs:
-	docker logs -f cdn_redis
-
+	docker logs -f cdn-redis
 redis-restart:
-	docker restart cdn_redis
-
+	docker restart cdn-redis
 redis-clear:
-	docker exec cdn_redis redis-cli FLUSHALL
+	docker exec cdn-redis redis-cli FLUSHALL
+cdn-exec:
+	docker exec -it cdn-golang bash
+cdn-logs:
+	docker logs -f cdn-golang
+cdn-restart:
+	docker restart cdn-golang

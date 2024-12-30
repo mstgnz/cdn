@@ -66,13 +66,14 @@ func main() {
 	statsService := service.NewStatsService()
 
 	// Initialize cache service
-	cacheService, err := service.NewCacheService("")
+	cacheService, err := service.NewCacheService(config.GetEnvOrDefault("REDIS_URL", "redis://localhost:6379"))
 	if err != nil {
-		logger.Fatal().Err(err).Msg("Failed to initialize cache service")
+		logger.Error().Err(err).Msg("Failed to initialize cache service, continuing without cache")
+		cacheService = nil
 	}
 
 	// Initialize handlers
-	imageHandler = handler.NewImage(minioClient, awsService, imageService)
+	imageHandler = handler.NewImage(minioClient, awsService, imageService, cacheService)
 	awsHandler = handler.NewAwsHandler(awsService)
 	minioHandler = handler.NewMinioHandler(minioClient)
 	wsHandler = handler.NewWebSocketHandler(statsService)
