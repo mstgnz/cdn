@@ -37,9 +37,9 @@ components:
     Error:
       type: object
       properties:
-        status:
+        success:
           type: boolean
-          description: Operation status
+          description: Operation success status
         message:
           type: string
           description: Error message
@@ -72,7 +72,7 @@ components:
     UploadResponse:
       type: object
       properties:
-        status:
+        success:
           type: boolean
           description: Operation success status
         message:

@@ -113,11 +113,11 @@ func CheckToken(c *fiber.Ctx) error {
 	return nil
 }
 
-func Response(c *fiber.Ctx, code int, status bool, message string, result any) error {
+func Response(c *fiber.Ctx, code int, success bool, message string, data any) error {
 	return c.Status(code).JSON(fiber.Map{
-		"status":  status,
+		"success": success,
 		"message": message,
-		"result":  result,
+		"data":    data,
 	})
 }
 
