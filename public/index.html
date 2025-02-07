@@ -5,8 +5,8 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Go Minio Cdn Api</title>
-    <meta name="description" content="Go Minio Cdn Api">
+    <title>Cdn API</title>
+    <meta name="description" content="Cdn API">
     <meta name="author" content="Mesut GENEZ">
 
     <style>
@@ -36,23 +36,86 @@
         .main p {
             text-align: justify;
         }
+
+        .features {
+            margin: 20px 0;
+        }
+
+        .features h3 {
+            color: #333;
+            margin: 15px 0 10px 0;
+        }
+
+        .features ul {
+            margin-left: 20px;
+        }
+
+        .api-example {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+
+        .links {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 5px;
+        }
     </style>
 </head>
 
 <body>
-<div class="main">
-    <h2>Go Minio Cdn Api</h2>
-    <p>
-        To upload an image, you must send a post request to <strong>http://localhost:9090/upload</strong>.<br>
-        form-data-keys; bucket, path and file.
-    </p>
-    <p>
-        To take a picture, use the url <strong>http://localhost:9090/bucket-name/object-name</strong>
-    </p>
-    <p>
-        <strong>Note : </strong>An authorization token is required to upload and delete images.
-    </p>
-</div>
+    <div class="main">
+        <h2>Cdn API</h2>
+
+        <div class="features">
+            <h3>Overview</h3>
+            <p>CDN Service is a high-performance, cloud-native content delivery solution built with Go. This service
+                combines modern architectural patterns with enterprise-grade features to offer:</p>
+
+            <h3>Key Features</h3>
+            <ul>
+                <li>Multi-cloud storage support with MinIO and AWS S3</li>
+                <li>Real-time image resizing and optimization</li>
+                <li>Redis caching and worker pool support</li>
+                <li>WebSocket-based live monitoring and Prometheus metrics</li>
+                <li>Circuit breaker pattern and rate limiting</li>
+            </ul>
+
+            <h3>API Usage</h3>
+            <div class="api-example">
+                <p>
+                    <strong>Image Upload:</strong> Send a POST request to <code>http://localhost:9090/upload</code><br>
+                    Required form-data keys: bucket, path, and file<br>
+                    Authorization header is required.
+                </p>
+                <p>
+                    <strong>Image Retrieval:</strong><br>
+                    Original size: <code>http://localhost:9090/bucket-name/object-name</code><br>
+                    Resize with width:
+                    <code>http://localhost:9090/bucket-name/w:300/image.jpg</code><br>
+                    Resize with height:
+                    <code>http://localhost:9090/bucket-name/h:200/image.jpg</code><br>
+                    Resize with both: <code>http://localhost:9090/bucket-name/w:300/h:200/image.jpg</code>
+                </p>
+            </div>
+
+            <div class="links">
+                <p><strong>Useful Links:</strong></p>
+                <ul>
+                    <li><a href="/swagger" target="_blank">API Documentation (Swagger)</a></li>
+                    <li>WebSocket Monitoring: <code>ws://localhost:9090/ws</code></li>
+                    <li>System Monitor: <code>http://localhost:9090/monitor</code></li>
+                </ul>
+            </div>
+
+            <p>
+                <strong>Note:</strong> An authorization token is required for image upload and delete operations.
+            </p>
+        </div>
+    </div>
 </body>
 
 </html>
