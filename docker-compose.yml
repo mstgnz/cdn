@@ -3,10 +3,12 @@ services:
     build:
       context: .
       dockerfile: dockerfile
-    container_name: cdn-api
     restart: always
-    ports:
-      - "${APP_PORT}:${APP_PORT}"
+    deploy:
+      mode: replicated
+      replicas: 3
+    expose:
+      - "${APP_PORT}"
     logging:
       driver: "json-file"
       options:
@@ -17,6 +19,20 @@ services:
     depends_on:
       - minio
       - redis
+    networks:
+      - cdn
+
+  # Load balancer for API instances
+  nginx:
+    image: nginx:alpine
+    container_name: cdn-nginx
+    restart: always
+    ports:
+      - "${APP_PORT}:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - api
     networks:
       - cdn
 
