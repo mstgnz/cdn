@@ -114,7 +114,7 @@ func CheckToken(c *fiber.Ctx) error {
 
 	getToken := strings.Split(authHeader, " ")
 	if len(getToken) != 2 || getToken[1] != config.GetEnvOrDefault("TOKEN", "") {
-		return errors.New(fmt.Sprintf("invalid token: \n%s\n%s", authHeader, config.GetEnvOrDefault("TOKEN", "null")))
+		return errors.New(fmt.Sprintf("invalid token: Authorization: %s TOKEN: %s", getToken[1], config.GetEnvOrDefault("TOKEN", "null")))
 	}
 	return nil
 }
