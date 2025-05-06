@@ -235,7 +235,7 @@ func main() {
 
 func AuthMiddleware(c *fiber.Ctx) error {
 	if err := service.CheckToken(c); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid Token", nil)
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 	return c.Next()
 }

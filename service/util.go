@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -106,9 +107,14 @@ func DownloadFile(filepath string, url string) error {
 }
 
 func CheckToken(c *fiber.Ctx) error {
-	getToken := strings.Split(c.Get("Authorization"), " ")
-	if len(getToken) != 2 || !strings.EqualFold(getToken[1], config.GetEnvOrDefault("TOKEN", "")) {
-		return errors.New("invalid token")
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		return errors.New("no token provided")
+	}
+
+	getToken := strings.Split(authHeader, " ")
+	if len(getToken) != 2 || getToken[1] != config.GetEnvOrDefault("TOKEN", "") {
+		return errors.New(fmt.Sprintf("invalid token: \n%s\n%s", authHeader, config.GetEnvOrDefault("TOKEN", "null")))
 	}
 	return nil
 }
