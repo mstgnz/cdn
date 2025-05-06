@@ -6,7 +6,7 @@ import (
 )
 
 func TestCacheService(t *testing.T) {
-	cache, err := NewCacheService("redis://localhost:6379")
+	cache, err := NewCacheService()
 	if err != nil {
 		t.Fatalf("failed to create cache service: %v", err)
 	}

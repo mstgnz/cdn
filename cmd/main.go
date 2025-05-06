@@ -66,7 +66,7 @@ func main() {
 	statsService := service.NewStatsService()
 
 	// Initialize cache service
-	cacheService, err := service.NewCacheService(config.GetEnvOrDefault("REDIS_URL", "redis://localhost:6379"))
+	cacheService, err := service.NewCacheService()
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to initialize cache service, continuing without cache")
 		cacheService = nil

@@ -29,10 +29,8 @@ type redisCache struct {
 	misses int64
 }
 
-func NewCacheService(redisURL string) (CacheService, error) {
-	if redisURL == "" {
-		redisURL = config.GetEnvOrDefault("REDIS_URL", "redis://localhost:6379")
-	}
+func NewCacheService() (CacheService, error) {
+	redisURL := config.GetEnvOrDefault("REDIS_URL", "redis://cdn-redis:6379")
 
 	opt, err := redis.ParseURL(redisURL)
 	if err != nil {

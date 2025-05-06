@@ -33,7 +33,7 @@ type RedisStorage struct {
 
 // NewRedisStorage creates a new Redis storage adapter
 func NewRedisStorage() (*RedisStorage, error) {
-	cache, err := service.NewCacheService("")
+	cache, err := service.NewCacheService()
 	if err != nil {
 		return nil, err
 	}

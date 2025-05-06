@@ -103,7 +103,7 @@ func NewImage(minioClient *minio.Client, awsService service.AwsService, imageSer
 	bp.Start()
 
 	// Initialize cache service
-	cacheService, err := service.NewCacheService("redis://localhost:6379")
+	cacheService, err := service.NewCacheService()
 	if err != nil {
 		log.Printf("Failed to initialize cache service: %v", err)
 	}
