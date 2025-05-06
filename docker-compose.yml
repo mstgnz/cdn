@@ -1,9 +1,9 @@
 services:
-  golang:
+  api:
     build:
       context: .
       dockerfile: dockerfile
-    container_name: cdn-golang
+    container_name: cdn-api
     restart: always
     ports:
       - "${APP_PORT}:${APP_PORT}"
@@ -35,7 +35,7 @@ services:
     command: server --console-address ":9001" /var/lib/minio
     networks:
       - cdn
-  
+
   redis:
     image: redis:7.2-alpine
     container_name: cdn-redis
