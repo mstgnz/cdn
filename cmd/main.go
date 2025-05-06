@@ -92,8 +92,12 @@ func main() {
 
 	// CORS middleware
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowHeaders: "*",
+		AllowOrigins:     "http://localhost:9090",
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
+		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
+		AllowCredentials: true,
+		ExposeHeaders:    "Content-Length, Content-Range",
+		MaxAge:           86400,
 	}))
 
 	app.Use(favicon.New(favicon.Config{
