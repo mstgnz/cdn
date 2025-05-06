@@ -113,7 +113,15 @@ func CheckToken(c *fiber.Ctx) error {
 	}
 
 	getToken := strings.Split(authHeader, " ")
-	if len(getToken) != 2 || getToken[1] != config.GetEnvOrDefault("TOKEN", "") {
+	if len(getToken) != 2 {
+		return errors.New("invalid authorization format")
+	}
+
+	// Temizle - satır sonu karakterlerini kaldır
+	clientToken := strings.TrimSpace(getToken[1])
+	serverToken := strings.TrimSpace(config.GetEnvOrDefault("TOKEN", ""))
+
+	if clientToken != serverToken {
 		return errors.New(fmt.Sprintf("invalid token: Authorization: %s TOKEN: %s", getToken[1], config.GetEnvOrDefault("TOKEN", "null")))
 	}
 	return nil
