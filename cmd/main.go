@@ -85,6 +85,7 @@ func main() {
 		IdleTimeout:           5 * time.Second,
 		ReadTimeout:           10 * time.Second,
 		WriteTimeout:          10 * time.Second,
+		ReadBufferSize:        16 * 1024 * 1024, // 16MB header buffer size
 	})
 
 	// Global rate limiter - 100 requests per minute with IP + Token based protection
@@ -92,12 +93,10 @@ func main() {
 
 	// CORS middleware
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     "http://localhost:9090",
-		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
-		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
-		AllowCredentials: true,
-		ExposeHeaders:    "Content-Length, Content-Range",
-		MaxAge:           86400,
+		AllowOrigins: "http://localhost:9090,http://127.0.0.1:9090",
+		AllowHeaders: "Origin,Content-Type,Accept,Authorization,X-Requested-With,X-CSRF-Token",
+		AllowMethods: "GET,POST,PUT,DELETE,OPTIONS",
+		MaxAge:       86400,
 	}))
 
 	app.Use(favicon.New(favicon.Config{
