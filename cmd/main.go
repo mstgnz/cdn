@@ -112,7 +112,20 @@ func main() {
 		return c.SendFile("./public/swagger.html")
 	})
 	app.Get("/swagger.yaml", func(c *fiber.Ctx) error {
-		return c.SendFile("./public/swagger.yaml")
+		// Read the swagger file
+		swaggerContent, err := os.ReadFile("./public/swagger.yaml")
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{
+				"error": "Failed to read swagger file",
+			})
+		}
+
+		// Replace environment variables
+		swaggerContent = []byte(strings.ReplaceAll(string(swaggerContent), "${APP_URL}", config.GetEnvOrDefault("APP_URL", "https://cdn.example.com")))
+
+		// Set content type and send the modified content
+		c.Set("Content-Type", "text/yaml")
+		return c.Send(swaggerContent)
 	})
 
 	// Health check endpoint

@@ -24,7 +24,7 @@ info:
 servers:
   - url: http://localhost:9090
     description: Local development server
-  - url: https://cdn.example.com
+  - url: ${APP_URL}
     description: Production server
 components:
   securitySchemes:
