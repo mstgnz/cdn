@@ -123,7 +123,8 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	var resize bool
 
 	if service.IsImageFile(objectName) {
-		resize, width, height = service.GetWidthAndHeight(c, service.ParamsType)
+		// Get width and height from query parameters
+		resize, width, height = service.GetWidthAndHeight(c, service.QueryType)
 	}
 
 	// Try to get from cache if resize is requested and cache service is available
