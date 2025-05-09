@@ -23,6 +23,7 @@ const (
 	ParamsType  = "params"
 	FormsType   = "forms"
 	HeadersType = "headers"
+	QueryType   = "query"
 )
 
 func ReadEnvAndSet() error {
@@ -172,6 +173,13 @@ func GetWidthAndHeight(c *fiber.Ctx, requestType string) (bool, uint, uint) {
 			width = getWidth
 		}
 		if getHeight, err := strconv.Atoi(c.Get("height")); err == nil {
+			height = getHeight
+		}
+	case QueryType:
+		if getWidth, err := strconv.Atoi(c.Query("width")); err == nil {
+			width = getWidth
+		}
+		if getHeight, err := strconv.Atoi(c.Query("height")); err == nil {
 			height = getHeight
 		}
 	}
