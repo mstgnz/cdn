@@ -161,6 +161,17 @@ func main() {
 	aws.Get("/:bucket/exists", awsHandler.BucketExists)
 	aws.Get("/vault-list", awsHandler.GlacierVaultList)
 
+	// Glacier endpoints
+	aws.Post("/glacier/:vault/initiate-retrieval/:archiveId", awsHandler.GlacierInitiateRetrieval)
+	aws.Get("/glacier/:vault/jobs", awsHandler.GlacierListJobs)
+	aws.Get("/glacier/:vault/jobs/:jobId/status", awsHandler.GlacierJobStatus)
+	aws.Get("/glacier/:vault/jobs/:jobId/download", awsHandler.GlacierDownloadArchive)
+	aws.Post("/glacier/:vault/inventory", awsHandler.GlacierInventoryRetrieval)
+
+	// Async download endpoints
+	aws.Post("/glacier/:vault/jobs/:jobId/async-download", awsHandler.GlacierInitiateAsyncDownload)
+	aws.Get("/glacier/downloads/:downloadJobId/status", awsHandler.GlacierCheckDownloadStatus)
+
 	// Minio
 	io := app.Group("/minio", AuthMiddleware)
 	io.Get("/bucket-list", minioHandler.BucketList)

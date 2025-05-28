@@ -102,6 +102,18 @@ components:
             link:
               type: string
               description: Public access URL
+    ApiResponse:
+      type: object
+      properties:
+        status:
+          type: boolean
+          description: Operation status
+        message:
+          type: string
+          description: Operation message
+        data:
+          type: object
+          description: Operation data
 paths:
   /upload:
     post:
@@ -613,73 +625,6 @@ paths:
           description: WebSocket connection successful
         "400":
           description: WebSocket connection failed
-  /aws/bucket-list:
-    get:
-      summary: List AWS buckets
-      description: |
-        Lists all buckets in AWS account.
-        Requires authentication.
-      tags:
-        - AWS
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: Bucket list
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  buckets:
-                    type: array
-                    items:
-                      type: string
-  /aws/{bucket}/exists:
-    get:
-      summary: Check if AWS bucket exists
-      tags:
-        - AWS
-      security:
-        - BearerAuth: []
-      parameters:
-        - name: bucket
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Bucket existence check result
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  exists:
-                    type: boolean
-  /aws/vault-list:
-    get:
-      summary: List AWS Glacier vaults
-      tags:
-        - AWS
-      security:
-        - BearerAuth: []
-      responses:
-        "200":
-          description: List of Glacier vaults
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    vaultName:
-                      type: string
-                    creationDate:
-                      type: string
-                      format: date-time
   /minio/bucket-list:
     get:
       summary: List MinIO buckets
@@ -765,3 +710,468 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /aws/bucket-list:
+    get:
+      summary: List AWS buckets
+      description: |
+        Lists all buckets in AWS account.
+        Requires authentication.
+      tags:
+        - AWS
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Bucket list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buckets:
+                    type: array
+                    items:
+                      type: string
+  /aws/{bucket}/exists:
+    get:
+      summary: Check if AWS bucket exists
+      tags:
+        - AWS
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: bucket
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Bucket existence check result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists:
+                    type: boolean
+  /aws/vault-list:
+    get:
+      summary: List AWS Glacier vaults
+      tags:
+        - AWS
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: List of Glacier vaults
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    vaultName:
+                      type: string
+                    creationDate:
+                      type: string
+                      format: date-time
+  /aws/glacier/{vault}/initiate-retrieval/{archiveId}:
+    post:
+      summary: Initiate Glacier archive retrieval
+      description: |
+        Starts a job to retrieve an archive from AWS Glacier.
+        The retrieval process takes 3-5 hours for Standard tier.
+      tags:
+        - AWS Glacier
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: vault
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Glacier vault name
+        - name: archiveId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Archive ID to retrieve
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [Standard, Bulk, Expedited]
+            default: Standard
+          description: Retrieval tier (affects cost and speed)
+      responses:
+        "200":
+          description: Retrieval job initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      jobId:
+                        type: string
+                      location:
+                        type: string
+                      type:
+                        type: string
+                      message:
+                        type: string
+                      estimatedTime:
+                        type: string
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized access
+        "500":
+          description: Internal server error
+  /aws/glacier/{vault}/jobs:
+    get:
+      summary: List Glacier jobs
+      description: Lists all jobs (retrieval, inventory) for a vault
+      tags:
+        - AWS Glacier
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: vault
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Glacier vault name
+      responses:
+        "200":
+          description: List of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        jobId:
+                          type: string
+                        jobDescription:
+                          type: string
+                        action:
+                          type: string
+                        statusCode:
+                          type: string
+                        completed:
+                          type: boolean
+                        creationDate:
+                          type: string
+                          format: date-time
+  /aws/glacier/{vault}/jobs/{jobId}/status:
+    get:
+      summary: Check Glacier job status
+      description: Gets the status of a specific Glacier job
+      tags:
+        - AWS Glacier
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: vault
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Glacier vault name
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Job ID to check
+      responses:
+        "200":
+          description: Job status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      jobId:
+                        type: string
+                      action:
+                        type: string
+                      statusCode:
+                        type: string
+                      statusMessage:
+                        type: string
+                      completed:
+                        type: boolean
+                      creationDate:
+                        type: string
+                        format: date-time
+                      completionDate:
+                        type: string
+                        format: date-time
+                      archiveSizeInBytes:
+                        type: integer
+  /aws/glacier/{vault}/inventory:
+    post:
+      summary: Initiate Glacier vault inventory
+      description: |
+        Starts a job to retrieve the inventory (list of all archives) of a vault.
+        This provides a list of all archives with their creation dates and sizes.
+      tags:
+        - AWS Glacier
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: vault
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Glacier vault name
+      responses:
+        "200":
+          description: Inventory job initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      jobId:
+                        type: string
+                      location:
+                        type: string
+                      message:
+                        type: string
+                      estimatedTime:
+                        type: string
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized access
+        "500":
+          description: Internal server error
+  /aws/glacier/{vault}/jobs/{jobId}/download:
+    get:
+      summary: Download completed Glacier archive (Synchronous)
+      description: |
+        Downloads a completed archive retrieval synchronously.
+        **WARNING: This is a synchronous operation - the client must wait during the entire download process.**
+        
+        For large files or background processing, use the async download endpoint instead:
+        `POST /aws/glacier/{vault}/jobs/{jobId}/async-download`
+        
+        **Use Cases:**
+        - Small files (< 100MB)
+        - Immediate download required
+        - Simple one-time operations
+        
+        **Not Recommended For:**
+        - Large files (> 100MB)
+        - Production environments with high load
+        - Unreliable network connections
+        
+        Only works if the Glacier retrieval job is completed.
+      tags:
+        - AWS Glacier
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: vault
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Glacier vault name
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Completed Glacier retrieval job ID
+      responses:
+        "200":
+          description: Archive file download (streams directly to client)
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "202":
+          description: Job not completed yet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: object
+                    properties:
+                      completed:
+                        type: boolean
+                      statusCode:
+                        type: string
+                      statusMessage:
+                        type: string
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized access
+        "500":
+          description: Internal server error
+  /aws/glacier/{vault}/jobs/{jobId}/async-download:
+    post:
+      summary: Start async Glacier archive download (Asynchronous)
+      description: |
+        Starts an asynchronous download job for a completed Glacier retrieval.
+        **This is an asynchronous operation - the client receives a job ID immediately and can track progress.**
+        
+        The file will be downloaded in the background to MinIO or local storage.
+        Use the download job ID to track progress.
+        
+        **Advantages:**
+        - Non-blocking operation
+        - Suitable for large files
+        - Background processing
+        - Queue management
+        - Retry mechanism
+        
+        **Recommended For:**
+        - Large files (> 100MB)
+        - Production environments
+        - Batch operations
+        - Integration workflows
+      tags:
+        - AWS Glacier
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: vault
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Glacier vault name
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Completed Glacier retrieval job ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - targetPath
+                - type
+              properties:
+                targetBucket:
+                  type: string
+                  description: Target MinIO bucket (required for type=minio)
+                  example: "restored-files"
+                targetPath:
+                  type: string
+                  description: Target file path
+                  example: "2024/01/restored-archive.jpg"
+                type:
+                  type: string
+                  enum: [minio, local]
+                  description: Download destination type
+                  example: "minio"
+      responses:
+        '202':
+          description: Async download job started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              example:
+                status: true
+                message: "async download job started"
+                data:
+                  downloadJobId: "dl-123e4567-e89b-12d3-a456-426614174000"
+                  status: "pending"
+                  message: "Download job has been queued. Use the download job ID to check status."
+        '400':
+          description: Bad request (missing parameters or Glacier job not completed)
+        '503':
+          description: Download queue is full
+  /aws/glacier/downloads/{downloadJobId}/status:
+    get:
+      summary: Check async download job status
+      description: |
+        Check the status of an async download job.
+        Returns current status, progress, and result information.
+      tags:
+        - AWS Glacier
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: downloadJobId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Download job ID returned from async download request
+      responses:
+        '200':
+          description: Download job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponse'
+              example:
+                status: true
+                message: "download job status"
+                data:
+                  id: "dl-123e4567-e89b-12d3-a456-426614174000"
+                  vaultName: "my-vault"
+                  jobId: "HkF9p6o7yjhFx-K3CGl6fuSm6VzW9T7esGQfco8nUXVYwS0jlb5gq1JZ55yHgt5vP54ZShjoQzQVVh7vEXAMPLEjobID"
+                  targetBucket: "restored-files"
+                  targetPath: "2024/01/restored-archive.jpg"
+                  status: "completed"
+                  startTime: "2024-01-15T16:00:00Z"
+                  endTime: "2024-01-15T16:05:00Z"
+                  downloadType: "minio"
+        '404':
+          description: Download job not found
