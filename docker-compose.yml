@@ -37,6 +37,7 @@ services:
       - cdn
 
   minio:
+    # image: minio/minio:RELEASE.2024-02-13T15-35-11Z
     image: minio/minio
     container_name: cdn-minio
     restart: always
