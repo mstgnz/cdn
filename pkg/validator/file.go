@@ -23,6 +23,8 @@ var (
 		".bmp":  true,
 		".tiff": true,
 		".svg":  true,
+		// PDF files
+		".pdf": true,
 		// Excel files
 		".xls":  true,
 		".xlsx": true,
@@ -75,7 +77,8 @@ func (e *FileValidationError) Error() string {
 
 // ValidateFile performs file validation
 func ValidateFile(file *multipart.FileHeader) error {
-	if config.GetEnvAsBoolOrDefault("DISABLE_VALIDATION", false) {
+	// Check if file validation is enabled
+	if !config.GetEnvAsBoolOrDefault("VALIDATE_FILE", true) {
 		return nil
 	}
 
@@ -110,7 +113,8 @@ func ValidateFile(file *multipart.FileHeader) error {
 
 // ValidateFileContent validates file content
 func ValidateFileContent(content []byte) error {
-	if config.GetEnvAsBoolOrDefault("DISABLE_VALIDATION", false) {
+	// Check if file validation is enabled
+	if !config.GetEnvAsBoolOrDefault("VALIDATE_FILE", true) {
 		return nil
 	}
 
