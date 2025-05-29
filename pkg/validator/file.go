@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	// Default maximum file size (25MB)
-	DefaultMaxFileSize int64 = 25 * 1024 * 1024
+	// Default maximum file size (100MB)
+	DefaultMaxFileSize int64 = 100 * 1024 * 1024
 
 	// Allowed file formats
 	AllowedImageFormats = map[string]bool{

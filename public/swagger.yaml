@@ -120,7 +120,7 @@ paths:
       summary: File upload
       description: |
         Single file upload endpoint.
-        - Maximum file size: 25MB
+        - Maximum file size: 100MB
         - Supported formats: JPG, PNG, GIF, WebP
         - Automatic format optimization
       tags:
@@ -423,7 +423,7 @@ paths:
       summary: Upload file from URL
       description: |
         Downloads and uploads a file from a given URL.
-        - Maximum file size: 25MB
+        - Maximum file size: 100MB
         - Supports various file formats
         - Can optionally upload to AWS S3
       tags:

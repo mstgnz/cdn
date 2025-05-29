@@ -64,7 +64,7 @@ func DefaultSecurityConfig() SecurityConfig {
 			AllowCredentials: true,
 		},
 		TrustedProxies:     []string{"127.0.0.1"},
-		MaxRequestBodySize: 25 * 1024 * 1024, // 25MB
+		MaxRequestBodySize: 100 * 1024 * 1024, // 100MB
 		RequestTimeout:     30 * time.Second,
 	}
 }

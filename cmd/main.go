@@ -79,7 +79,7 @@ func main() {
 	wsHandler = handler.NewWebSocketHandler(statsService)
 
 	app := fiber.New(fiber.Config{
-		BodyLimit: 25 * 1024 * 2014,
+		BodyLimit: 100 * 1024 * 1024, // 100MB to match nginx configuration
 		// Enable graceful shutdown
 		DisableStartupMessage: true,
 		IdleTimeout:           5 * time.Second,
