@@ -585,16 +585,16 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "No files provided", nil)
 	}
 
-	results := make([]map[string]interface{}, 0)
+	results := make([]map[string]any, 0)
 	var wg sync.WaitGroup
-	resultChan := make(chan map[string]interface{}, len(files))
+	resultChan := make(chan map[string]any, len(files))
 
 	for _, file := range files {
 		wg.Add(1)
 		go func(file *multipart.FileHeader) {
 			defer wg.Done()
 
-			result := make(map[string]interface{})
+			result := make(map[string]any)
 			result["filename"] = file.Filename
 
 			// Validate file
@@ -690,16 +690,16 @@ func (i *image) BatchDelete(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "AWS bucket not found", nil)
 	}
 
-	results := make([]map[string]interface{}, 0)
+	results := make([]map[string]any, 0)
 	var wg sync.WaitGroup
-	resultChan := make(chan map[string]interface{}, len(req.Files))
+	resultChan := make(chan map[string]any, len(req.Files))
 
 	for _, file := range req.Files {
 		wg.Add(1)
 		go func(filename string) {
 			defer wg.Done()
 
-			result := make(map[string]interface{})
+			result := make(map[string]any)
 			result["filename"] = filename
 
 			// Delete from MinIO

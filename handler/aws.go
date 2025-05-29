@@ -98,7 +98,7 @@ func (a awsHandler) GlacierInitiateRetrieval(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "retrieval job initiated", map[string]interface{}{
+	return service.Response(c, fiber.StatusOK, true, "retrieval job initiated", map[string]any{
 		"jobId":         *result.JobId,
 		"location":      *result.Location,
 		"type":          retrievalType,
@@ -139,7 +139,7 @@ func (a awsHandler) GlacierDownloadArchive(c *fiber.Ctx) error {
 	}
 
 	if !jobStatus.Completed {
-		return service.Response(c, fiber.StatusAccepted, false, "job not completed yet", map[string]interface{}{
+		return service.Response(c, fiber.StatusAccepted, false, "job not completed yet", map[string]any{
 			"status":        jobStatus.StatusCode,
 			"statusMessage": *jobStatus.StatusMessage,
 			"completed":     jobStatus.Completed,
@@ -179,7 +179,7 @@ func (a awsHandler) GlacierJobStatus(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
 	}
 
-	status := map[string]interface{}{
+	status := map[string]any{
 		"jobId":          *result.JobId,
 		"jobDescription": result.JobDescription,
 		"action":         result.Action,
@@ -213,7 +213,7 @@ func (a awsHandler) GlacierInventoryRetrieval(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "inventory retrieval job initiated", map[string]interface{}{
+	return service.Response(c, fiber.StatusOK, true, "inventory retrieval job initiated", map[string]any{
 		"jobId":         *result.JobId,
 		"location":      *result.Location,
 		"message":       "Inventory retrieval job started. This will list all archives in the vault.",
@@ -258,7 +258,7 @@ func (a awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 	}
 
 	if !jobStatus.Completed {
-		return service.Response(c, fiber.StatusBadRequest, false, "glacier retrieval job not completed yet", map[string]interface{}{
+		return service.Response(c, fiber.StatusBadRequest, false, "glacier retrieval job not completed yet", map[string]any{
 			"status":    jobStatus.StatusCode,
 			"completed": jobStatus.Completed,
 		})
@@ -317,7 +317,7 @@ func (a awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusServiceUnavailable, false, "download queue is full", nil)
 	}
 
-	return service.Response(c, fiber.StatusAccepted, true, "async download job started", map[string]interface{}{
+	return service.Response(c, fiber.StatusAccepted, true, "async download job started", map[string]any{
 		"downloadJobId": downloadJobID,
 		"status":        "pending",
 		"message":       "Download job has been queued. Use the download job ID to check status.",

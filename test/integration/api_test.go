@@ -24,7 +24,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var body map[string]interface{}
+	var body map[string]any
 	err = json.NewDecoder(resp.Body).Decode(&body)
 	assert.NoError(t, err)
 

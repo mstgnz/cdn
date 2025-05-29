@@ -50,15 +50,15 @@ func TestHealthCheck(t *testing.T) {
 	tests := []struct {
 		name           string
 		expectedStatus int
-		expectedBody   map[string]interface{}
+		expectedBody   map[string]any
 	}{
 		{
 			name:           "Success Response",
 			expectedStatus: fiber.StatusOK,
-			expectedBody: map[string]interface{}{
+			expectedBody: map[string]any{
 				"status":  true,
 				"message": "Healthy",
-				"data": map[string]interface{}{
+				"data": map[string]any{
 					"minio": "Connected",
 					"aws":   "Connected",
 					"redis": "Connected",
@@ -75,7 +75,7 @@ func TestHealthCheck(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
 
-			var body map[string]interface{}
+			var body map[string]any
 			err = json.NewDecoder(resp.Body).Decode(&body)
 
 			assert.NoError(t, err)
@@ -121,7 +121,7 @@ func TestUploadImage(t *testing.T) {
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
 
 			if tt.expectedError != "" {
-				var body map[string]interface{}
+				var body map[string]any
 				err = json.NewDecoder(resp.Body).Decode(&body)
 				assert.NoError(t, err)
 				assert.Equal(t, tt.expectedError, body["message"])
