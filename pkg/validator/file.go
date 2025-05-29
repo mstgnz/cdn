@@ -3,7 +3,6 @@ package validator
 import (
 	"fmt"
 	"mime/multipart"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -76,7 +75,7 @@ func (e *FileValidationError) Error() string {
 
 // ValidateFile performs file validation
 func ValidateFile(file *multipart.FileHeader) error {
-	if os.Getenv("DISABLE_VALIDATION") == "true" {
+	if config.GetEnvAsBoolOrDefault("DISABLE_VALIDATION", false) {
 		return nil
 	}
 
@@ -111,7 +110,7 @@ func ValidateFile(file *multipart.FileHeader) error {
 
 // ValidateFileContent validates file content
 func ValidateFileContent(content []byte) error {
-	if os.Getenv("DISABLE_VALIDATION") == "true" {
+	if config.GetEnvAsBoolOrDefault("DISABLE_VALIDATION", false) {
 		return nil
 	}
 
