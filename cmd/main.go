@@ -201,10 +201,10 @@ func main() {
 		app.Delete("/:bucket/*", AuthMiddleware, imageHandler.DeleteImage)
 	}
 
-	// Upload endpoints with stricter rate limit - 10 requests per minute
+	// Upload endpoints with stricter rate limit - 50 requests per minute
 	if !disableUpload {
 		uploadGroup := app.Group("/")
-		uploadGroup.Use(middleware.NewAdvancedRateLimiter(10, time.Minute))
+		uploadGroup.Use(middleware.NewAdvancedRateLimiter(50, time.Minute))
 		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
 		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadWithUrl)
 		uploadGroup.Post("/batch/upload", AuthMiddleware, imageHandler.BatchUpload)
