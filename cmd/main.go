@@ -204,7 +204,7 @@ func main() {
 	// Upload endpoints with stricter rate limit - 50 requests per minute
 	if !disableUpload {
 		uploadGroup := app.Group("/")
-		uploadGroup.Use(middleware.NewAdvancedRateLimiter(50, time.Minute))
+		uploadGroup.Use(middleware.NewAdvancedRateLimiter(config.GetEnvAsIntOrDefault("UPLOAD_RATE_LIMIT", 50), time.Minute))
 		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
 		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadWithUrl)
 		uploadGroup.Post("/batch/upload", AuthMiddleware, imageHandler.BatchUpload)
