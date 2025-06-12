@@ -73,7 +73,7 @@ func main() {
 	}
 
 	// Initialize handlers
-	imageHandler = handler.NewImage(minioClient, awsService, imageService, cacheService)
+	imageHandler = handler.NewImage(minioClient, awsService, imageService)
 	awsHandler = handler.NewAwsHandler(awsService)
 	minioHandler = handler.NewMinioHandler(minioClient)
 	wsHandler = handler.NewWebSocketHandler(statsService)

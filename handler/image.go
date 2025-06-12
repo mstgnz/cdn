@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -45,7 +44,6 @@ type image struct {
 	imageService *service.ImageService
 	workerPool   *worker.Pool
 	batchProc    *batch.BatchProcessor
-	cache        service.CacheService
 }
 
 // ImageProcessRequest represents an image processing request
@@ -80,7 +78,7 @@ type BatchDeleteRequest struct {
 	AWSDelete bool     `json:"aws_delete"`
 }
 
-func NewImage(minioClient *minio.Client, awsService service.AwsService, imageService *service.ImageService, cacheService service.CacheService) Image {
+func NewImage(minioClient *minio.Client, awsService service.AwsService, imageService *service.ImageService) Image {
 	// Initialize worker pool with 5 workers
 	workerConfig := worker.DefaultConfig()
 	workerConfig.Workers = 5
@@ -92,7 +90,6 @@ func NewImage(minioClient *minio.Client, awsService service.AwsService, imageSer
 		awsService:   awsService,
 		imageService: imageService,
 		workerPool:   wp,
-		cache:        cacheService,
 	}
 
 	// Initialize batch processor with default config
@@ -102,12 +99,6 @@ func NewImage(minioClient *minio.Client, awsService service.AwsService, imageSer
 	bp := batch.NewBatchProcessor(batchConfig, img.processBatch)
 	bp.Start()
 
-	// Initialize cache service
-	cacheService, err := service.NewCacheService()
-	if err != nil {
-		log.Printf("Failed to initialize cache service: %v", err)
-	}
-	img.cache = cacheService
 	img.batchProc = bp
 
 	return img
@@ -127,15 +118,6 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		resize, width, height = service.GetWidthAndHeight(c, service.QueryType)
 	}
 
-	// Try to get from cache if resize is requested and cache service is available
-	if resize && i.cache != nil {
-		if cachedImage, err := i.cache.GetResizedImage(bucket, objectName, width, height); err == nil {
-			c.Set("Content-Type", http.DetectContentType(cachedImage))
-			return c.Send(cachedImage)
-		}
-	}
-
-	// Continue with normal flow if not in cache
 	if found, err := i.minioClient.BucketExists(ctx, bucket); !found || err != nil {
 		return c.SendFile("./public/notfound.png")
 	}
@@ -159,16 +141,11 @@ func (i image) GetImage(c *fiber.Ctx) error {
 
 	if resize {
 		resizedImage := i.imageService.ImagickResize(getByte, width, height)
-		// Cache the resized image if cache service is available
-		if i.cache != nil {
-			if err := i.cache.SetResizedImage(bucket, objectName, width, height, resizedImage); err != nil {
-				log.Printf("Failed to cache resized image: %v", err)
-			}
-		}
+		c.Status(http.StatusOK)
 		return c.Send(resizedImage)
 	}
 
-	c.Status(http.StatusFound)
+	c.Status(http.StatusOK)
 	return c.Send(getByte)
 }
 
