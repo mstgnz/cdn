@@ -108,9 +108,6 @@ func main() {
 	disableGet := config.GetEnvAsBoolOrDefault("DISABLE_GET", false)
 
 	// scalar
-	app.Get("/scalar", func(c *fiber.Ctx) error {
-		return c.SendFile("./public/scalar.html")
-	})
 	app.Get("/scalar.yaml", func(c *fiber.Ctx) error {
 		// Read the scalar file
 		scalarContent, err := os.ReadFile("./public/scalar.yaml")
@@ -213,7 +210,7 @@ func main() {
 
 	// Index
 	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendFile("./public/index.html")
+		return c.SendFile("./public/scalar.html")
 	})
 
 	// Graceful shutdown setup

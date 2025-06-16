@@ -3,7 +3,7 @@ info:
   title: CDN API Documentation
   version: 1.6.3
   description: |
-    CDN Service API provides file management with MinIO and AWS S3 support.
+    CDN Service is a high-performance, cloud-native content delivery solution built with Go. This service combines modern architectural patterns with enterprise-grade features to offer:
 
     ## Features
     - Image upload and management
