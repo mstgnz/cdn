@@ -9,13 +9,14 @@ CDN Service is a high-performance, cloud-native content delivery solution built 
 - **Enterprise Features**: Circuit breaker pattern, rate limiting, and batch operations
 - **High Performance**: Redis caching, worker pools, and optimized file handling
 - **Real-Time Monitoring**: WebSocket-based live monitoring, Prometheus metrics, and comprehensive health checks
-- **Developer-Friendly**: Swagger documentation, standardized API responses, and easy deployment options
+- **Developer-Friendly**: Scalar documentation, standardized API responses, and easy deployment options
 
 Perfect for organizations needing a reliable, scalable, and feature-rich content delivery solution with support for multiple cloud providers and advanced monitoring capabilities.
 
 ## Features
 
 ### Storage
+
 - Multi-cloud storage support (MinIO, AWS S3)
 - Glacier archive support
 - Bucket management
@@ -23,6 +24,7 @@ Perfect for organizations needing a reliable, scalable, and feature-rich content
 - Secure file handling
 
 ### Image Processing
+
 - Real-time image resizing
 - Batch processing capabilities
 - Worker pool for concurrent operations
@@ -30,6 +32,7 @@ Perfect for organizations needing a reliable, scalable, and feature-rich content
 - URL-based image processing
 
 ### Performance
+
 - Redis caching layer with optimized storage
 - Batch processing with configurable sizes
 - Worker pool for parallel processing
@@ -44,6 +47,7 @@ Perfect for organizations needing a reliable, scalable, and feature-rich content
   - Real-time state monitoring
 
 ### Security
+
 - Token-based authentication
 - CORS configuration
 - Rate limiting per endpoint with bypass protection
@@ -52,6 +56,7 @@ Perfect for organizations needing a reliable, scalable, and feature-rich content
 - Trusted proxy support
 
 ### Monitoring & Observability
+
 - Prometheus metrics
 - Jaeger tracing integration
 - Structured logging with zerolog
@@ -68,13 +73,15 @@ Perfect for organizations needing a reliable, scalable, and feature-rich content
   - Recent error logs
 
 ### Additional Features
+
 - Environment variable configuration
 - Hot reload for configuration changes
-- Swagger documentation
+- Scalar documentation
 - Docker support
 - Graceful shutdown
 
 ### API Standardization
+
 - Consistent response formats across all endpoints
 - Detailed error messages and codes
 - Standardized success/error patterns
@@ -83,6 +90,7 @@ Perfect for organizations needing a reliable, scalable, and feature-rich content
 ## Quick Start
 
 ### Prerequisites
+
 - Go 1.22+
 - Docker and Docker Compose
 - MinIO Server (or AWS S3 access)
@@ -91,17 +99,20 @@ Perfect for organizations needing a reliable, scalable, and feature-rich content
 ### Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/mstgnz/cdn.git
 cd cdn
 ```
 
 2. Copy the example environment file:
+
 ```bash
 cp .env.example .env
 ```
 
 3. Start the services using Docker Compose:
+
 ```bash
 docker-compose up -d
 ```
@@ -140,6 +151,7 @@ DISABLE_GET=false
 #### Image Operations
 
 1. Upload an image:
+
 ```bash
 curl -X POST http://localhost:9090/upload \
   -H "Authorization: your-token" \
@@ -149,6 +161,7 @@ curl -X POST http://localhost:9090/upload \
 ```
 
 2. Get an image with resizing:
+
 ```bash
 # Original size
 http://localhost:9090/your-bucket/image.jpg
@@ -164,6 +177,7 @@ http://localhost:9090/your-bucket/w:300/h:200/image.jpg
 ```
 
 3. Delete an image:
+
 ```bash
 curl -X DELETE http://localhost:9090/your-bucket/image.jpg \
   -H "Authorization: your-token"
@@ -172,12 +186,14 @@ curl -X DELETE http://localhost:9090/your-bucket/image.jpg \
 #### Bucket Operations
 
 1. List buckets:
+
 ```bash
 curl http://localhost:9090/minio/bucket-list \
   -H "Authorization: your-token"
 ```
 
 2. Create bucket:
+
 ```bash
 curl http://localhost:9090/minio/your-bucket/create \
   -H "Authorization: your-token"
@@ -186,31 +202,33 @@ curl http://localhost:9090/minio/your-bucket/create \
 ### Monitoring
 
 1. Connect to WebSocket for real-time updates:
+
 ```javascript
-const ws = new WebSocket('ws://localhost:9090/ws');
+const ws = new WebSocket("ws://localhost:9090/ws");
 ws.onmessage = (event) => {
-    const stats = JSON.parse(event.data);
-    console.log('System stats:', stats);
-    // Example stats data:
-    // {
-    //   "timestamp": "2024-01-15T10:30:00Z",
-    //   "active_uploads": 5,
-    //   "upload_speed": 1048576, // bytes/sec
-    //   "cache_hit_rate": 85.5,  // percentage
-    //   "cpu_usage": 45.2,       // percentage
-    //   "memory_usage": 60.8,    // percentage
-    //   "disk_usage": {
-    //     "/data": 75,           // percentage
-    //     "/uploads": 45
-    //   },
-    //   "errors": [
-    //     "Failed to process image: invalid format"
-    //   ]
-    // }
+  const stats = JSON.parse(event.data);
+  console.log("System stats:", stats);
+  // Example stats data:
+  // {
+  //   "timestamp": "2024-01-15T10:30:00Z",
+  //   "active_uploads": 5,
+  //   "upload_speed": 1048576, // bytes/sec
+  //   "cache_hit_rate": 85.5,  // percentage
+  //   "cpu_usage": 45.2,       // percentage
+  //   "memory_usage": 60.8,    // percentage
+  //   "disk_usage": {
+  //     "/data": 75,           // percentage
+  //     "/uploads": 45
+  //   },
+  //   "errors": [
+  //     "Failed to process image: invalid format"
+  //   ]
+  // }
 };
 ```
 
 2. Get current monitoring stats:
+
 ```bash
 curl -H "Authorization: your-token" http://localhost:9090/monitor
 ```
@@ -218,6 +236,7 @@ curl -H "Authorization: your-token" http://localhost:9090/monitor
 ## Kubernetes Deployment
 
 For production deployments, we provide comprehensive Kubernetes configurations with:
+
 - Horizontal Pod Autoscaling (3-10 pods)
 - Resource quotas and limits
 - Health monitoring and readiness probes
