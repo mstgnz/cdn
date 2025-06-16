@@ -41,7 +41,7 @@ func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
 		statusCode = fiber.StatusServiceUnavailable
 	}
 
-	status := map[string]any{
+	data := map[string]any{
 		"status": overallStatus,
 		"services": map[string]any{
 			"minio": minioHealth,
@@ -51,7 +51,7 @@ func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
 		"timestamp": time.Now().UTC(),
 	}
 
-	return service.Response(c, statusCode, true, "Health check", status)
+	return service.Response(c, statusCode, true, "Health check", data)
 }
 
 func (h *HealthChecker) checkMinioHealth(ctx context.Context) string {

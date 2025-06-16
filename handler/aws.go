@@ -3,7 +3,6 @@ package handler
 import (
 	"io"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -66,9 +65,9 @@ func (a awsHandler) BucketExists(c *fiber.Ctx) error {
 	bucketName := c.Params("bucket")
 	exists := a.awsService.BucketExists(bucketName)
 	if !exists {
-		return service.Response(c, fiber.StatusNotFound, false, "not found", strconv.FormatBool(exists))
+		return service.Response(c, fiber.StatusNotFound, false, "bucket not found", nil)
 	}
-	return service.Response(c, fiber.StatusFound, true, "found", strconv.FormatBool(exists))
+	return service.Response(c, fiber.StatusOK, true, "bucket exists", nil)
 }
 
 func (a awsHandler) BucketList(c *fiber.Ctx) error {
@@ -76,7 +75,7 @@ func (a awsHandler) BucketList(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusOK, false, err.Error(), buckets)
 	}
-	return service.Response(c, fiber.StatusOK, true, "buckets", buckets)
+	return service.Response(c, fiber.StatusOK, true, "buckets listed", buckets)
 }
 
 func (a awsHandler) GlacierVaultList(c *fiber.Ctx) error {

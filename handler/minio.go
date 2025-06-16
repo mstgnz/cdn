@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
@@ -29,16 +28,19 @@ func (m minioHandler) BucketList(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusOK, false, err.Error(), buckets)
 	}
-	return service.Response(c, fiber.StatusOK, true, "buckets", buckets)
+	return service.Response(c, fiber.StatusOK, true, "buckets listed", buckets)
 }
 
 func (m minioHandler) BucketExists(c *fiber.Ctx) error {
 	bucketName := c.Params("bucket")
 	exists, err := m.minioClient.BucketExists(context.Background(), bucketName)
 	if err != nil {
-		return service.Response(c, fiber.StatusNotFound, false, err.Error(), strconv.FormatBool(exists))
+		return service.Response(c, fiber.StatusNotFound, false, err.Error(), nil)
 	}
-	return service.Response(c, fiber.StatusFound, true, "success", strconv.FormatBool(exists))
+	if !exists {
+		return service.Response(c, fiber.StatusNotFound, false, "bucket not found", nil)
+	}
+	return service.Response(c, fiber.StatusOK, true, "bucket exists", nil)
 }
 
 func (m minioHandler) CreateBucket(c *fiber.Ctx) error {
@@ -47,7 +49,7 @@ func (m minioHandler) CreateBucket(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusOK, false, err.Error(), bucketName)
 	}
-	return service.Response(c, fiber.StatusCreated, true, "success", bucketName)
+	return service.Response(c, fiber.StatusCreated, true, "bucket created", bucketName)
 }
 
 func (m minioHandler) RemoveBucket(c *fiber.Ctx) error {
@@ -56,5 +58,5 @@ func (m minioHandler) RemoveBucket(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusOK, false, err.Error(), bucketName)
 	}
-	return service.Response(c, fiber.StatusOK, true, "success", bucketName)
+	return service.Response(c, fiber.StatusOK, true, "bucket deleted", bucketName)
 }
