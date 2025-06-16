@@ -1,6 +1,8 @@
-name: CDN API
-version: 1.6.3
-description: |
+openapi: 3.0.0
+info:
+  title: CDN API Documentation
+  version: 1.6.3
+  description: |
     CDN Service API provides file management with MinIO and AWS S3 support.
 
     ## Features
@@ -21,10 +23,10 @@ contact:
   url: https://github.com/mstgnz/cdn
 
 servers:
-  - name: Local development server
-    url: http://localhost:9090
-  - name: Production server
-    url: ${APP_URL}
+  - url: http://localhost:9090
+    description: Local development server
+  - url: ${APP_URL}
+    description: Production server
 
 components:
   securitySchemes:
