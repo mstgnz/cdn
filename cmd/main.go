@@ -107,25 +107,25 @@ func main() {
 	disableUpload := config.GetEnvAsBoolOrDefault("DISABLE_UPLOAD", false)
 	disableGet := config.GetEnvAsBoolOrDefault("DISABLE_GET", false)
 
-	// Swagger
-	app.Get("/swagger", func(c *fiber.Ctx) error {
-		return c.SendFile("./public/swagger.html")
+	// scalar
+	app.Get("/scalar", func(c *fiber.Ctx) error {
+		return c.SendFile("./public/scalar.html")
 	})
-	app.Get("/swagger.yaml", func(c *fiber.Ctx) error {
-		// Read the swagger file
-		swaggerContent, err := os.ReadFile("./public/swagger.yaml")
+	app.Get("/scalar.yaml", func(c *fiber.Ctx) error {
+		// Read the scalar file
+		scalarContent, err := os.ReadFile("./public/scalar.yaml")
 		if err != nil {
 			return c.Status(500).JSON(fiber.Map{
-				"error": "Failed to read swagger file",
+				"error": "Failed to read scalar file",
 			})
 		}
 
 		// Replace environment variables
-		swaggerContent = []byte(strings.ReplaceAll(string(swaggerContent), "${APP_URL}", config.GetEnvOrDefault("APP_URL", "https://cdn.example.com")))
+		scalarContent = []byte(strings.ReplaceAll(string(scalarContent), "${APP_URL}", config.GetEnvOrDefault("APP_URL", "https://cdn.example.com")))
 
 		// Set content type and send the modified content
 		c.Set("Content-Type", "text/yaml")
-		return c.Send(swaggerContent)
+		return c.Send(scalarContent)
 	})
 
 	// Health check endpoint
