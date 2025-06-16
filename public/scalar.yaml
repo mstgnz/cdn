@@ -16,11 +16,12 @@ info:
     ## Authentication
     Most API endpoints require a Bearer token. Include the token in the header as follows:
     ```
-    Authorization: Bearer <your_token>
+        Authorization: Bearer <your_token>
     ```
-contact:
-  name: Mesut GENEZ
-  url: https://github.com/mstgnz/cdn
+
+    ## Contact
+    - **Developer**: Mesut GENEZ
+    - **GitHub**: [https://github.com/mstgnz/cdn](https://github.com/mstgnz/cdn)
 
 servers:
   - url: http://localhost:9090
