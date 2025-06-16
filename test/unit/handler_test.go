@@ -56,7 +56,7 @@ func TestHealthCheck(t *testing.T) {
 			name:           "Success Response",
 			expectedStatus: fiber.StatusOK,
 			expectedBody: map[string]any{
-				"status":  true,
+				"success": true,
 				"message": "Healthy",
 				"data": map[string]any{
 					"minio": "Connected",

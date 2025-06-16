@@ -205,7 +205,7 @@ func NewAdvancedRateLimiter(max int, duration time.Duration) fiber.Handler {
 		KeyGenerator: RateLimitKey,
 		LimitReached: func(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
-				"status":  false,
+				"success": false,
 				"message": "Rate limit exceeded",
 				"data": fiber.Map{
 					"wait": duration.String(),

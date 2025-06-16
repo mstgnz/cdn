@@ -16,7 +16,7 @@ var RateLimiterConfig = limiter.Config{
 	},
 	LimitReached: func(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
-			"status":  false,
+			"success": false,
 			"message": "Rate limit exceeded. Please try again later.",
 		})
 	},
