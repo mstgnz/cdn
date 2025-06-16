@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/mstgnz/cdn/pkg/config"
 )
 
 // SecurityConfig represents security middleware configuration
@@ -220,5 +221,5 @@ func NewAdvancedRateLimiter(max int, duration time.Duration) fiber.Handler {
 
 // DefaultAdvancedRateLimiter returns a default rate limiter middleware (100 requests per minute)
 func DefaultAdvancedRateLimiter() fiber.Handler {
-	return NewAdvancedRateLimiter(100, time.Minute)
+	return NewAdvancedRateLimiter(config.GetEnvAsIntOrDefault("RATE_LIMIT", 100), time.Minute)
 }

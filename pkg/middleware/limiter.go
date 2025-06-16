@@ -5,12 +5,13 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
+	"github.com/mstgnz/cdn/pkg/config"
 )
 
 // RateLimiterConfig default rate limiter configuration
 var RateLimiterConfig = limiter.Config{
-	Max:        100,             // Maximum number of requests per duration
-	Expiration: 1 * time.Minute, // Duration for rate limit window
+	Max:        config.GetEnvAsIntOrDefault("RATE_LIMIT", 100),
+	Expiration: time.Duration(config.GetEnvAsIntOrDefault("RATE_LIMIT_DURATION", 1)) * time.Minute, // Duration for rate limit window
 	KeyGenerator: func(c *fiber.Ctx) string {
 		return c.IP() // Use client IP as key
 	},
