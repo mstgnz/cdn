@@ -210,6 +210,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	objectName := imageName
 	if path != "" {
 		// Sanitize path as well
+		path = strings.Trim(path, "/")
 		sanitizedPath := service.SanitizeObjectName(path)
 		objectName = sanitizedPath + "/" + imageName
 	}
@@ -361,6 +362,7 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	objectName := randomName + "." + sanitizedExtension
 	if req.Path != "" {
 		// Sanitize path as well
+		req.Path = strings.Trim(req.Path, "/")
 		sanitizedPath := service.SanitizeObjectName(req.Path)
 		objectName = sanitizedPath + "/" + randomName + "." + sanitizedExtension
 	}
