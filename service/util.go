@@ -225,3 +225,77 @@ func RatioWidthHeight(width, height, targetWidth, targetHeight uint) (uint, uint
 
 	return targetWidth, targetHeight
 }
+
+// SanitizeObjectName removes or replaces unsupported characters for MinIO object names
+func SanitizeObjectName(objectName string) string {
+	// Replace unsupported characters with safe alternatives
+	replacements := map[rune]string{
+		'^':  "",
+		'*':  "",
+		'|':  "",
+		'\\': "",
+		'&':  "",
+		'"':  "",
+		';':  "",
+		// Unicode characters that might cause issues
+		'ç': "c",
+		'ğ': "g",
+		'ı': "i",
+		'ö': "o",
+		'ş': "s",
+		'ü': "u",
+		'Ç': "C",
+		'Ğ': "G",
+		'İ': "I",
+		'Ö': "O",
+		'Ş': "S",
+		'Ü': "U",
+		'ë': "e",
+		'ñ': "n",
+		'é': "e",
+		'è': "e",
+		'ê': "e",
+		'à': "a",
+		'á': "a",
+		'â': "a",
+		'ô': "o",
+		'ú': "u",
+		'ù': "u",
+		'î': "i",
+		'ï': "i",
+		// Space and other whitespace characters
+		' ':  "_",
+		'\t': "_",
+		'\n': "_",
+		'\r': "_",
+	}
+
+	var result strings.Builder
+	for _, char := range objectName {
+		if replacement, exists := replacements[char]; exists {
+			result.WriteString(replacement)
+		} else if char < 32 || char > 126 { // Non-printable ASCII characters
+			// Skip non-printable characters
+			continue
+		} else {
+			result.WriteRune(char)
+		}
+	}
+
+	sanitized := result.String()
+
+	// Remove multiple consecutive underscores
+	for strings.Contains(sanitized, "__") {
+		sanitized = strings.ReplaceAll(sanitized, "__", "_")
+	}
+
+	// Remove leading/trailing underscores and dots
+	sanitized = strings.Trim(sanitized, "_.")
+
+	// Ensure the name is not empty
+	if sanitized == "" {
+		sanitized = "file"
+	}
+
+	return sanitized
+}

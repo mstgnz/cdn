@@ -204,10 +204,14 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 
 	// Generate random name and construct object name
 	randomName := service.RandomName(10)
-	imageName := randomName + "." + parseFileName[1]
+	// Sanitize file extension
+	fileExtension := service.SanitizeObjectName(parseFileName[len(parseFileName)-1])
+	imageName := randomName + "." + fileExtension
 	objectName := imageName
 	if path != "" {
-		objectName = path + "/" + imageName
+		// Sanitize path as well
+		sanitizedPath := service.SanitizeObjectName(path)
+		objectName = sanitizedPath + "/" + imageName
 	}
 	contentType := file.Header["Content-Type"][0]
 	fileSize := file.Size
@@ -352,9 +356,13 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	}
 
 	randomName := service.RandomName(10)
-	objectName := randomName + "." + extension
+	// Sanitize extension
+	sanitizedExtension := service.SanitizeObjectName(extension)
+	objectName := randomName + "." + sanitizedExtension
 	if req.Path != "" {
-		objectName = req.Path + "/" + randomName + "." + extension
+		// Sanitize path as well
+		sanitizedPath := service.SanitizeObjectName(req.Path)
+		objectName = sanitizedPath + "/" + randomName + "." + sanitizedExtension
 	}
 
 	// Prepare content as a new reader
@@ -593,9 +601,14 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 			defer fileContent.Close()
 
 			// Generate object name
-			objectName := service.RandomName(10) + "_" + file.Filename
+			randomName := service.RandomName(10)
+			// Sanitize filename
+			sanitizedFilename := service.SanitizeObjectName(file.Filename)
+			objectName := randomName + "_" + sanitizedFilename
 			if pathPrefix != "" {
-				objectName = pathPrefix + "/" + objectName
+				// Sanitize path prefix as well
+				sanitizedPath := service.SanitizeObjectName(pathPrefix)
+				objectName = sanitizedPath + "/" + objectName
 			}
 
 			// Upload to MinIO
