@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -41,7 +42,7 @@ func ReadEnvAndSet() error {
 }
 
 func RandomName(length int) string {
-	return strconv.FormatInt(time.Now().UnixMicro(), 10)
+	return fmt.Sprintf("%d_%d", time.Now().UnixMicro(), rand.Intn(1000000))
 }
 
 func StreamToByte(stream io.Reader) []byte {

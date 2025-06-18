@@ -203,7 +203,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	}
 
 	// Generate random name and construct object name
-	randomName := service.RandomName(10)
+	randomName := uuid.New().String()
 	// Sanitize file extension
 	fileExtension := service.SanitizeObjectName(parseFileName[len(parseFileName)-1])
 	imageName := randomName + "." + fileExtension
@@ -356,7 +356,7 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		}
 	}
 
-	randomName := service.RandomName(10)
+	randomName := uuid.New().String()
 	// Sanitize extension
 	sanitizedExtension := service.SanitizeObjectName(extension)
 	objectName := randomName + "." + sanitizedExtension
@@ -603,7 +603,7 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 			defer fileContent.Close()
 
 			// Generate object name
-			randomName := service.RandomName(10)
+			randomName := uuid.New().String()
 			// Sanitize filename
 			sanitizedFilename := service.SanitizeObjectName(file.Filename)
 			objectName := randomName + "_" + sanitizedFilename
