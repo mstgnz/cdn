@@ -25,6 +25,7 @@ var (
 		".svg":  true,
 		".heic": true, // iOS HEIC format
 		".heif": true, // HEIF format
+		".avif": true, // AVIF format
 		// PDF files
 		".pdf": true,
 		// Excel files
@@ -38,21 +39,31 @@ var (
 		// Audio files
 		".wav": true,
 		".mp3": true,
+		// Video files (mobile videos)
+		".mp4": true,
+		".mov": true, // QuickTime from iOS
+		".3gp": true, // 3GP from mobile
+		".avi": true, // AVI files
 	}
 
 	// Allowed MIME types
 	AllowedMimeTypes = map[string]bool{
-		"image/jpeg":      true,
-		"image/jpg":       true, // Alternative JPEG MIME type
-		"image/png":       true,
-		"image/gif":       true,
-		"image/webp":      true,
-		"image/bmp":       true,
-		"image/tiff":      true,
-		"image/svg+xml":   true,
-		"image/heic":      true, // iOS HEIC format
-		"image/heif":      true, // HEIF format
-		"application/pdf": true,
+		"image/jpeg":               true,
+		"image/jpg":                true, // Alternative JPEG MIME type
+		"image/pjpeg":              true, // Progressive JPEG (IE and some mobile apps)
+		"image/png":                true,
+		"image/x-png":              true, // Alternative PNG MIME type
+		"image/gif":                true,
+		"image/webp":               true,
+		"image/bmp":                true,
+		"image/x-ms-bmp":           true, // Microsoft BMP variant
+		"image/tiff":               true,
+		"image/svg+xml":            true,
+		"image/heic":               true, // iOS HEIC format
+		"image/heif":               true, // HEIF format
+		"image/avif":               true, // AVIF format (modern browsers/mobile)
+		"application/octet-stream": true, // Generic binary (some mobile apps use this)
+		"application/pdf":          true,
 		// Excel MIME types
 		"application/vnd.ms-excel": true,
 		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": true,
@@ -67,6 +78,11 @@ var (
 		"audio/wave": true,
 		"audio/mpeg": true,
 		"audio/mp3":  true,
+		// Video MIME types (mobile videos)
+		"video/mp4":       true,
+		"video/quicktime": true, // MOV files from iOS
+		"video/3gpp":      true, // 3GP files from mobile
+		"video/x-msvideo": true, // AVI files
 	}
 )
 
@@ -159,6 +175,8 @@ func isValidFileContent(content []byte) bool {
 		"bmp":  {0x42, 0x4D},
 		// HEIC/HEIF files (check for 'ftyp' at offset 4)
 		"heic": {0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70}, // ftyp header
+		// AVIF files
+		"avif": {0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66}, // ftypavif
 		// Office documents (ZIP-based)
 		"office": {0x50, 0x4B, 0x03, 0x04}, // ZIP signature for modern Office files
 		// Legacy Office files
@@ -167,6 +185,10 @@ func isValidFileContent(content []byte) bool {
 		"wav":     {0x52, 0x49, 0x46, 0x46}, // RIFF header for WAV
 		"mp3":     {0xFF, 0xFB},             // MP3 frame header (most common)
 		"mp3_id3": {0x49, 0x44, 0x33},       // ID3v2 header
+		// Video files
+		"mp4": {0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70},                   // ftyp (same as HEIC but different content)
+		"3gp": {0x00, 0x00, 0x00, 0x14, 0x66, 0x74, 0x79, 0x70, 0x33, 0x67, 0x70}, // ftyp3gp
+		"avi": {0x52, 0x49, 0x46, 0x46},                                           // RIFF header for AVI
 		// PDF files
 		"pdf": {0x25, 0x50, 0x44, 0x46}, // %PDF
 	}
