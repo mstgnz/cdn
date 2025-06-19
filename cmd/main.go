@@ -82,10 +82,10 @@ func main() {
 		BodyLimit: 100 * 1024 * 1024, // 100MB to match nginx configuration
 		// Enable graceful shutdown
 		DisableStartupMessage: true,
-		IdleTimeout:           5 * time.Second,
-		ReadTimeout:           10 * time.Second,
-		WriteTimeout:          10 * time.Second,
-		ReadBufferSize:        16 * 1024 * 1024, // 16MB header buffer size
+		IdleTimeout:           60 * time.Second,
+		ReadTimeout:           60 * time.Second,
+		WriteTimeout:          60 * time.Second,
+		ReadBufferSize:        24 * 1024 * 1024, // 24MB header buffer size
 	})
 
 	// Global rate limiter - 100 requests per minute with IP + Token based protection
