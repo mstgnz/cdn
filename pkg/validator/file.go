@@ -23,6 +23,8 @@ var (
 		".bmp":  true,
 		".tiff": true,
 		".svg":  true,
+		".heic": true, // iOS HEIC format
+		".heif": true, // HEIF format
 		// PDF files
 		".pdf": true,
 		// Excel files
@@ -41,12 +43,15 @@ var (
 	// Allowed MIME types
 	AllowedMimeTypes = map[string]bool{
 		"image/jpeg":      true,
+		"image/jpg":       true, // Alternative JPEG MIME type
 		"image/png":       true,
 		"image/gif":       true,
 		"image/webp":      true,
 		"image/bmp":       true,
 		"image/tiff":      true,
 		"image/svg+xml":   true,
+		"image/heic":      true, // iOS HEIC format
+		"image/heif":      true, // HEIF format
 		"application/pdf": true,
 		// Excel MIME types
 		"application/vnd.ms-excel": true,
@@ -152,6 +157,8 @@ func isValidFileContent(content []byte) bool {
 		"gif":  {0x47, 0x49, 0x46, 0x38},
 		"webp": {0x52, 0x49, 0x46, 0x46},
 		"bmp":  {0x42, 0x4D},
+		// HEIC/HEIF files (check for 'ftyp' at offset 4)
+		"heic": {0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70}, // ftyp header
 		// Office documents (ZIP-based)
 		"office": {0x50, 0x4B, 0x03, 0x04}, // ZIP signature for modern Office files
 		// Legacy Office files
