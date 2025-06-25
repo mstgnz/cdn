@@ -217,52 +217,52 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	contentType := file.Header["Content-Type"][0]
 	fileSize := file.Size
 
-	// size
-	if fileContent, err := io.ReadAll(fileBuffer); err == nil {
-		// Validate file content
-		if err := validator.ValidateFileContent(fileContent); err != nil {
-			if valErr, ok := err.(*validator.FileValidationError); ok {
-				return service.Response(c, fiber.StatusBadRequest, false, valErr.Message, map[string]string{
-					"code": valErr.Code,
-				})
-			}
-			return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
-		}
-
-		_, _ = fileBuffer.Seek(0, 0)
-		fileSize = int64(len(fileContent))
-		contentType = http.DetectContentType(fileContent)
-
-		// set size
-		var (
-			orjWidth  uint
-			orjHeight uint
-		)
-		if err, orjWidth, orjHeight = i.imageService.ImagickGetWidthHeight(fileContent); err == nil {
-			c.Set("Width", strconv.Itoa(int(orjWidth)))
-			c.Set("Height", strconv.Itoa(int(orjHeight)))
-		}
-
-		// resize
-		resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
-		if resize && orjWidth > 0 && orjHeight > 0 {
-			width, height = service.RatioWidthHeight(orjWidth, orjHeight, width, height)
-			fileContent = i.imageService.ImagickResize(fileContent, width, height)
-			if tempFile, err := service.CreateFile(fileContent); err == nil {
-				defer func() {
-					_ = tempFile.Close()
-				}()
-				fileSize = int64(len(fileContent))
-				c.Set("Width", strconv.Itoa(int(width)))
-				c.Set("Height", strconv.Itoa(int(height)))
-				c.Set("Content-Length", strconv.Itoa(len(fileContent)))
-				fileBuffer = tempFile
-			}
-		}
+	// Read file content once and store it
+	fileContent, err := io.ReadAll(fileBuffer)
+	if err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, "Failed to read file content", nil)
 	}
 
+	// Validate file content
+	if err := validator.ValidateFileContent(fileContent); err != nil {
+		if valErr, ok := err.(*validator.FileValidationError); ok {
+			return service.Response(c, fiber.StatusBadRequest, false, valErr.Message, map[string]string{
+				"code": valErr.Code,
+			})
+		}
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+	}
+
+	// Update file properties based on actual content
+	fileSize = int64(len(fileContent))
+	contentType = http.DetectContentType(fileContent)
+
+	// set size
+	var (
+		orjWidth  uint
+		orjHeight uint
+	)
+	if err, orjWidth, orjHeight = i.imageService.ImagickGetWidthHeight(fileContent); err == nil {
+		c.Set("Width", strconv.Itoa(int(orjWidth)))
+		c.Set("Height", strconv.Itoa(int(orjHeight)))
+	}
+
+	// resize
+	resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
+	if resize && orjWidth > 0 && orjHeight > 0 {
+		width, height = service.RatioWidthHeight(orjWidth, orjHeight, width, height)
+		fileContent = i.imageService.ImagickResize(fileContent, width, height)
+		fileSize = int64(len(fileContent))
+		c.Set("Width", strconv.Itoa(int(width)))
+		c.Set("Height", strconv.Itoa(int(height)))
+		c.Set("Content-Length", strconv.Itoa(len(fileContent)))
+	}
+
+	// Create a reader from the final content for upload
+	contentReader := bytes.NewReader(fileContent)
+
 	// Minio Upload
-	_, err = i.minioClient.PutObject(ctx, bucket, objectName, fileBuffer, fileSize, minio.PutObjectOptions{ContentType: contentType})
+	_, err = i.minioClient.PutObject(ctx, bucket, objectName, contentReader, fileSize, minio.PutObjectOptions{ContentType: contentType})
 	minioResult := "Minio Successfully Uploaded"
 
 	if err != nil {
@@ -276,7 +276,9 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	// S3 Upload
 	if awsUpload {
 		awsResult := "S3 Successfully Uploaded"
-		if _, err = i.awsService.S3PutObject(bucket, objectName, fileBuffer); err != nil {
+		// Create a new reader for AWS upload since the previous reader was consumed
+		awsContentReader := bytes.NewReader(fileContent)
+		if _, err = i.awsService.S3PutObject(bucket, objectName, awsContentReader); err != nil {
 			awsResult = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
 		}
 		return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
