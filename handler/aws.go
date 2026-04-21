@@ -3,6 +3,7 @@ package handler
 import (
 	"io"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -27,10 +28,10 @@ type AwsHandler interface {
 }
 
 type awsHandler struct {
-	awsService service.AwsService
-	workerPool *worker.Pool
-	// Track download jobs
+	awsService   service.AwsService
+	workerPool   *worker.Pool
 	downloadJobs map[string]*DownloadJob
+	jobsMu       sync.RWMutex
 }
 
 // DownloadJob represents an async download job
@@ -61,7 +62,7 @@ func NewAwsHandler(awsService service.AwsService) AwsHandler {
 	}
 }
 
-func (a awsHandler) BucketExists(c *fiber.Ctx) error {
+func (a *awsHandler) BucketExists(c *fiber.Ctx) error {
 	bucketName := c.Params("bucket")
 	exists := a.awsService.BucketExists(bucketName)
 	if !exists {
@@ -70,7 +71,7 @@ func (a awsHandler) BucketExists(c *fiber.Ctx) error {
 	return service.Response(c, fiber.StatusOK, true, "bucket exists", nil)
 }
 
-func (a awsHandler) BucketList(c *fiber.Ctx) error {
+func (a *awsHandler) BucketList(c *fiber.Ctx) error {
 	buckets, err := a.awsService.ListBuckets()
 	if err != nil {
 		return service.Response(c, fiber.StatusOK, false, err.Error(), buckets)
@@ -78,12 +79,12 @@ func (a awsHandler) BucketList(c *fiber.Ctx) error {
 	return service.Response(c, fiber.StatusOK, true, "buckets listed", buckets)
 }
 
-func (a awsHandler) GlacierVaultList(c *fiber.Ctx) error {
+func (a *awsHandler) GlacierVaultList(c *fiber.Ctx) error {
 	return service.Response(c, fiber.StatusOK, true, "glacier vault list", a.awsService.GlacierVaultList())
 }
 
 // GlacierInitiateRetrieval starts a retrieval job for an archive
-func (a awsHandler) GlacierInitiateRetrieval(c *fiber.Ctx) error {
+func (a *awsHandler) GlacierInitiateRetrieval(c *fiber.Ctx) error {
 	vaultName := c.Params("vault")
 	archiveId := c.Params("archiveId")
 	retrievalType := c.Query("type", "Standard") // Standard, Bulk, or Expedited
@@ -107,7 +108,7 @@ func (a awsHandler) GlacierInitiateRetrieval(c *fiber.Ctx) error {
 }
 
 // GlacierListJobs lists all jobs for a vault
-func (a awsHandler) GlacierListJobs(c *fiber.Ctx) error {
+func (a *awsHandler) GlacierListJobs(c *fiber.Ctx) error {
 	vaultName := c.Params("vault")
 
 	if vaultName == "" {
@@ -123,7 +124,7 @@ func (a awsHandler) GlacierListJobs(c *fiber.Ctx) error {
 }
 
 // GlacierDownloadArchive downloads completed archive retrieval (immediate stream)
-func (a awsHandler) GlacierDownloadArchive(c *fiber.Ctx) error {
+func (a *awsHandler) GlacierDownloadArchive(c *fiber.Ctx) error {
 	vaultName := c.Params("vault")
 	jobId := c.Params("jobId")
 
@@ -165,7 +166,7 @@ func (a awsHandler) GlacierDownloadArchive(c *fiber.Ctx) error {
 }
 
 // GlacierJobStatus checks the status of a specific job
-func (a awsHandler) GlacierJobStatus(c *fiber.Ctx) error {
+func (a *awsHandler) GlacierJobStatus(c *fiber.Ctx) error {
 	vaultName := c.Params("vault")
 	jobId := c.Params("jobId")
 
@@ -200,7 +201,7 @@ func (a awsHandler) GlacierJobStatus(c *fiber.Ctx) error {
 }
 
 // GlacierInventoryRetrieval initiates inventory retrieval for a vault
-func (a awsHandler) GlacierInventoryRetrieval(c *fiber.Ctx) error {
+func (a *awsHandler) GlacierInventoryRetrieval(c *fiber.Ctx) error {
 	vaultName := c.Params("vault")
 
 	if vaultName == "" {
@@ -221,7 +222,7 @@ func (a awsHandler) GlacierInventoryRetrieval(c *fiber.Ctx) error {
 }
 
 // GlacierInitiateAsyncDownload starts an async download job
-func (a awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
+func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 	vaultName := c.Params("vault")
 	jobId := c.Params("jobId")
 
@@ -277,7 +278,9 @@ func (a awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 	}
 
 	// Store job
+	a.jobsMu.Lock()
 	a.downloadJobs[downloadJobID] = downloadJob
+	a.jobsMu.Unlock()
 
 	// Create worker job
 	respChan := make(chan error, 1)
@@ -324,14 +327,16 @@ func (a awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 }
 
 // GlacierCheckDownloadStatus checks the status of an async download job
-func (a awsHandler) GlacierCheckDownloadStatus(c *fiber.Ctx) error {
+func (a *awsHandler) GlacierCheckDownloadStatus(c *fiber.Ctx) error {
 	downloadJobID := c.Params("downloadJobId")
 
 	if downloadJobID == "" {
 		return service.Response(c, fiber.StatusBadRequest, false, "download job ID is required", nil)
 	}
 
+	a.jobsMu.RLock()
 	downloadJob, exists := a.downloadJobs[downloadJobID]
+	a.jobsMu.RUnlock()
 	if !exists {
 		return service.Response(c, fiber.StatusNotFound, false, "download job not found", nil)
 	}

@@ -249,8 +249,10 @@ func main() {
 	}
 
 	// Close other connections
-	if err := cacheService.Close(); err != nil {
-		logger.Error().Err(err).Msg("Cache service shutdown failed")
+	if cacheService != nil {
+		if err := cacheService.Close(); err != nil {
+			logger.Error().Err(err).Msg("Cache service shutdown failed")
+		}
 	}
 
 	logger.Info().Msg("Server gracefully stopped")

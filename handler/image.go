@@ -126,6 +126,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	if err != nil {
 		return c.SendFile("./public/notfound.png")
 	}
+	defer object.Close()
 
 	getByte := service.StreamToByte(object)
 	if len(getByte) == 0 {
@@ -335,14 +336,16 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!", nil)
 	}
 
-	res, err := http.Get(req.URL)
+	httpClient := &http.Client{Timeout: 30 * time.Second}
+	res, err := httpClient.Get(req.URL)
 	if err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 	defer res.Body.Close()
 
-	// Read content from URL
-	content, err := io.ReadAll(res.Body)
+	// Read content from URL, capped at the configured max file size
+	maxSize := config.GetEnvAsIntOrDefault("MAX_FILE_SIZE", int(validator.DefaultMaxFileSize))
+	content, err := io.ReadAll(io.LimitReader(res.Body, int64(maxSize)))
 	if err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, "Failed to read content from URL", nil)
 	}
@@ -477,7 +480,7 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 	}
 
 	// Create response channel
-	respChan := make(chan error)
+	respChan := make(chan error, 1)
 
 	// Create and submit job
 	job := worker.Job{
@@ -495,7 +498,9 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 		Response: respChan,
 	}
 
-	i.workerPool.Submit(job)
+	if err := i.workerPool.Submit(job); err != nil {
+		return service.Response(c, fiber.StatusServiceUnavailable, false, "Image processing queue is full", nil)
+	}
 
 	// Wait for response
 	if err := <-respChan; err != nil {
@@ -579,11 +584,13 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 	results := make([]map[string]any, 0)
 	var wg sync.WaitGroup
 	resultChan := make(chan map[string]any, len(files))
+	sem := make(chan struct{}, 10)
 
 	for _, file := range files {
 		wg.Add(1)
+		sem <- struct{}{}
 		go func(file *multipart.FileHeader) {
-			defer wg.Done()
+			defer func() { <-sem; wg.Done() }()
 
 			result := make(map[string]any)
 			result["filename"] = file.Filename
@@ -689,11 +696,13 @@ func (i *image) BatchDelete(c *fiber.Ctx) error {
 	results := make([]map[string]any, 0)
 	var wg sync.WaitGroup
 	resultChan := make(chan map[string]any, len(req.Files))
+	sem := make(chan struct{}, 10)
 
 	for _, file := range req.Files {
 		wg.Add(1)
+		sem <- struct{}{}
 		go func(filename string) {
-			defer wg.Done()
+			defer func() { <-sem; wg.Done() }()
 
 			result := make(map[string]any)
 			result["filename"] = filename
