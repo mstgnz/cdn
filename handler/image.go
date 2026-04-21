@@ -132,9 +132,11 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		return c.SendFile("./public/notfound.png")
 	}
 
-	if err, orjWidth, orjHeight := i.imageService.ImagickGetWidthHeight(getByte); err == nil {
-		c.Set("Width", strconv.Itoa(int(orjWidth)))
-		c.Set("Height", strconv.Itoa(int(orjHeight)))
+	if service.IsImageFile(objectName) {
+		if err, orjWidth, orjHeight := i.imageService.ImagickGetWidthHeight(getByte); err == nil {
+			c.Set("Width", strconv.Itoa(int(orjWidth)))
+			c.Set("Height", strconv.Itoa(int(orjHeight)))
+		}
 	}
 
 	c.Set("Content-Type", http.DetectContentType(getByte))
@@ -238,9 +240,11 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 			orjWidth  uint
 			orjHeight uint
 		)
-		if err, orjWidth, orjHeight = i.imageService.ImagickGetWidthHeight(fileContent); err == nil {
-			c.Set("Width", strconv.Itoa(int(orjWidth)))
-			c.Set("Height", strconv.Itoa(int(orjHeight)))
+		if service.IsImageFile(file.Filename) {
+			if err, orjWidth, orjHeight = i.imageService.ImagickGetWidthHeight(fileContent); err == nil {
+				c.Set("Width", strconv.Itoa(int(orjWidth)))
+				c.Set("Height", strconv.Itoa(int(orjHeight)))
+			}
 		}
 
 		// resize
