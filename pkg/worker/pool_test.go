@@ -75,35 +75,64 @@ func TestWorkerPool(t *testing.T) {
 	})
 
 	t.Run("queue full", func(t *testing.T) {
-		// Fill the queue
-		for i := 0; i < config.QueueSize; i++ {
-			respChan := make(chan error)
-			job := Job{
-				ID: "fill-queue",
+		// Occupy every worker with a job that blocks until released, so the
+		// queue cannot be drained while we fill it (otherwise this is timing
+		// dependent: idle workers dequeue faster than we can fill).
+		release := make(chan struct{})
+		busy := make(chan struct{}, config.Workers)
+		var responses []chan error
+
+		for i := 0; i < config.Workers; i++ {
+			resp := make(chan error, 1)
+			responses = append(responses, resp)
+			if err := pool.Submit(Job{
+				ID: "blocker",
 				Task: func() error {
-					time.Sleep(time.Millisecond * 100)
+					busy <- struct{}{}
+					<-release
 					return nil
 				},
-				Response: respChan,
+				Response: resp,
+			}); err != nil {
+				t.Fatalf("failed to submit blocker: %v", err)
 			}
-			if err := pool.Submit(job); err != nil {
-				t.Errorf("failed to submit job: %v", err)
+		}
+		// Wait until all workers are actually busy.
+		for i := 0; i < config.Workers; i++ {
+			<-busy
+		}
+
+		// Fill the queue to capacity; nothing is dequeued while workers block.
+		for i := 0; i < config.QueueSize; i++ {
+			resp := make(chan error, 1)
+			responses = append(responses, resp)
+			if err := pool.Submit(Job{
+				ID:       "fill-queue",
+				Task:     func() error { return nil },
+				Response: resp,
+			}); err != nil {
+				t.Fatalf("failed to fill queue slot %d: %v", i, err)
 			}
 		}
 
-		// Try to submit one more job
-		respChan := make(chan error)
-		job := Job{
-			ID: "overflow",
-			Task: func() error {
-				return nil
-			},
-			Response: respChan,
-		}
-
-		err := pool.Submit(job)
-		if err == nil {
+		// The queue is now full; the next submit must be rejected.
+		if err := pool.Submit(Job{
+			ID:       "overflow",
+			Task:     func() error { return nil },
+			Response: make(chan error, 1),
+		}); err == nil {
 			t.Error("expected error when queue is full, got nil")
+		}
+
+		// Release blockers and drain every queued job so the pool is idle for
+		// the next subtest (otherwise the still-full queue leaks across tests).
+		close(release)
+		for _, r := range responses {
+			select {
+			case <-r:
+			case <-time.After(2 * time.Second):
+				t.Fatal("timed out draining queued jobs")
+			}
 		}
 	})
 

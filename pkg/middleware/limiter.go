@@ -13,7 +13,7 @@ var RateLimiterConfig = limiter.Config{
 	Max:        config.GetEnvAsIntOrDefault("RATE_LIMIT", 100),
 	Expiration: time.Duration(config.GetEnvAsIntOrDefault("RATE_LIMIT_DURATION", 1)) * time.Minute, // Duration for rate limit window
 	KeyGenerator: func(c *fiber.Ctx) string {
-		return c.IP() // Use client IP as key
+		return ClientIP(c) // Cloudflare-aware real client IP
 	},
 	LimitReached: func(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{

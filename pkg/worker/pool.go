@@ -28,6 +28,7 @@ type Pool struct {
 	cancelFunc context.CancelFunc
 	maxRetries int
 	retryDelay time.Duration
+	stopOnce   sync.Once
 }
 
 // Config represents worker pool configuration
@@ -70,29 +71,41 @@ func (p *Pool) Start() {
 	}
 }
 
-// Stop gracefully shuts down the worker pool
+// Stop gracefully shuts down the worker pool. It is safe to call multiple
+// times; only the first call performs the shutdown.
 func (p *Pool) Stop() {
-	p.cancelFunc()
+	p.stopOnce.Do(func() {
+		p.cancelFunc()
 
-	// Wait for all jobs to complete with timeout
-	done := make(chan struct{})
-	go func() {
-		p.wg.Wait()
-		close(done)
-	}()
+		// Wait for all jobs to complete with timeout
+		done := make(chan struct{})
+		go func() {
+			p.wg.Wait()
+			close(done)
+		}()
 
-	select {
-	case <-done:
-		p.logger.Info().Msg("Worker pool stopped gracefully")
-	case <-time.After(30 * time.Second):
-		p.logger.Warn().Msg("Worker pool stop timed out")
-	}
+		select {
+		case <-done:
+			p.logger.Info().Msg("Worker pool stopped gracefully")
+		case <-time.After(30 * time.Second):
+			p.logger.Warn().Msg("Worker pool stop timed out")
+		}
 
-	close(p.jobQueue)
+		// Note: jobQueue is intentionally NOT closed. Workers exit via
+		// ctx.Done(); closing the queue would let a concurrent Submit panic
+		// with "send on closed channel".
+	})
 }
 
 // Submit adds a new job to the pool
 func (p *Pool) Submit(job Job) error {
+	// Reject early if the pool is shutting down, before attempting the send.
+	select {
+	case <-p.ctx.Done():
+		return fmt.Errorf("worker pool is shutting down")
+	default:
+	}
+
 	select {
 	case p.jobQueue <- job:
 		return nil
@@ -113,49 +126,58 @@ func (p *Pool) worker(id int) {
 			if !ok {
 				return
 			}
-
-			observability.WorkerPoolActiveWorkers.Inc()
-			defer observability.WorkerPoolActiveWorkers.Dec()
-
-			var err error
-			retries := 0
-			start := time.Now()
-
-			for retries <= p.maxRetries {
-				err = job.Task()
-				duration := time.Since(start).Seconds()
-
-				if err == nil {
-					observability.WorkerJobProcessingDuration.WithLabelValues("success").Observe(duration)
-					break
-				}
-
-				retries++
-				observability.WorkerJobRetries.WithLabelValues("image_processing").Inc()
-
-				p.logger.Error().
-					Err(err).
-					Str("jobID", job.ID).
-					Int("workerID", id).
-					Int("retry", retries).
-					Msg("Job processing failed")
-
-				if retries <= p.maxRetries {
-					time.Sleep(p.retryDelay)
-					continue
-				}
-
-				observability.WorkerJobProcessingDuration.WithLabelValues("failure").Observe(duration)
-			}
-
-			job.Response <- err
-
-			// Update queue size metric
-			queueSize := float64(len(p.jobQueue))
-			observability.WorkerPoolQueueSize.Set(queueSize)
-
+			p.runJob(job, id)
 		case <-p.ctx.Done():
 			return
 		}
 	}
+}
+
+// runJob executes a single job with retries and delivers the result. The
+// active-worker gauge is incremented/decremented per job (a plain defer in the
+// worker loop would only decrement once the worker exits). The response send
+// is guarded by ctx so an abandoned caller (or shutdown) cannot pin the worker
+// forever on the channel send.
+func (p *Pool) runJob(job Job, id int) {
+	observability.WorkerPoolActiveWorkers.Inc()
+	defer observability.WorkerPoolActiveWorkers.Dec()
+
+	var err error
+	retries := 0
+	start := time.Now()
+
+	for retries <= p.maxRetries {
+		err = job.Task()
+		duration := time.Since(start).Seconds()
+
+		if err == nil {
+			observability.WorkerJobProcessingDuration.WithLabelValues("success").Observe(duration)
+			break
+		}
+
+		retries++
+		observability.WorkerJobRetries.WithLabelValues("image_processing").Inc()
+
+		p.logger.Error().
+			Err(err).
+			Str("jobID", job.ID).
+			Int("workerID", id).
+			Int("retry", retries).
+			Msg("Job processing failed")
+
+		if retries <= p.maxRetries {
+			time.Sleep(p.retryDelay)
+			continue
+		}
+
+		observability.WorkerJobProcessingDuration.WithLabelValues("failure").Observe(duration)
+	}
+
+	select {
+	case job.Response <- err:
+	case <-p.ctx.Done():
+	}
+
+	// Update queue size metric
+	observability.WorkerPoolQueueSize.Set(float64(len(p.jobQueue)))
 }

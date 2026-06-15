@@ -126,31 +126,66 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	if err != nil {
 		return c.SendFile("./public/notfound.png")
 	}
-	defer object.Close()
 
-	getByte := service.StreamToByte(object)
-	if len(getByte) == 0 {
-		return c.SendFile("./public/notfound.png")
-	}
+	// Resize path: ImageMagick must decode the whole image, so the object is
+	// fully buffered here. Width/Height headers come from the decode we are
+	// already doing for the resize.
+	if resize {
+		defer object.Close()
 
-	if service.IsImageFile(objectName) {
+		getByte := service.StreamToByte(object)
+		if len(getByte) == 0 {
+			return c.SendFile("./public/notfound.png")
+		}
+
 		if err, orjWidth, orjHeight := i.imageService.ImagickGetWidthHeight(getByte); err == nil {
 			c.Set("Width", strconv.Itoa(int(orjWidth)))
 			c.Set("Height", strconv.Itoa(int(orjHeight)))
 		}
-	}
 
-	c.Set("Content-Type", http.DetectContentType(getByte))
-
-	if resize {
-		resizedImage := i.imageService.ImagickResize(getByte, width, height)
+		c.Set("Content-Type", http.DetectContentType(getByte))
 		c.Status(http.StatusOK)
-		return c.Send(resizedImage)
+		return c.Send(i.imageService.ImagickResize(getByte, width, height))
 	}
 
+	// Direct (non-resize) path: stream the object straight to the client with
+	// constant memory, whatever its type or size (original images served
+	// as-is, PDFs, videos, large files). This avoids buffering whole objects
+	// into RAM and the per-request ImageMagick decode. fasthttp closes the
+	// stream (and therefore the MinIO object) once the response is written.
+	stat, err := object.Stat()
+	if err != nil || stat.Size == 0 {
+		_ = object.Close()
+		return c.SendFile("./public/notfound.png")
+	}
+
+	// Sniff the content type from the first bytes, then replay them in front of
+	// the remaining stream so nothing is lost.
+	head := make([]byte, 512)
+	n, readErr := io.ReadFull(object, head)
+	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
+		_ = object.Close()
+		return c.SendFile("./public/notfound.png")
+	}
+	head = head[:n]
+
+	c.Set("Content-Type", http.DetectContentType(head))
 	c.Status(http.StatusOK)
-	return c.Send(getByte)
+	return c.SendStream(streamCloser{
+		Reader: io.MultiReader(bytes.NewReader(head), object),
+		closer: object,
+	}, int(stat.Size))
 }
+
+// streamCloser couples the reader handed to fasthttp with the underlying
+// closer, so closing the response stream also closes the MinIO object.
+// io.MultiReader is not an io.Closer, so without this the object would leak.
+type streamCloser struct {
+	io.Reader
+	closer io.Closer
+}
+
+func (s streamCloser) Close() error { return s.closer.Close() }
 
 func (i image) UploadImage(c *fiber.Ctx) error {
 	ctx := context.Background()

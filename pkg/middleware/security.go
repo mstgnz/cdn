@@ -88,7 +88,7 @@ func SecurityMiddleware(cfg SecurityConfig) []fiber.Handler {
 			Max:        cfg.RateLimit.MaxRequests,
 			Expiration: cfg.RateLimit.WindowDuration,
 			KeyGenerator: func(c *fiber.Ctx) string {
-				return c.IP()
+				return ClientIP(c)
 			},
 			LimitReached: func(c *fiber.Ctx) error {
 				return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
@@ -113,7 +113,7 @@ func SecurityMiddleware(cfg SecurityConfig) []fiber.Handler {
 			Max:        cfg.RateLimit.UploadLimit,
 			Expiration: cfg.RateLimit.UploadWindow,
 			KeyGenerator: func(c *fiber.Ctx) string {
-				return c.IP() + ":upload"
+				return ClientIP(c) + ":upload"
 			},
 			LimitReached: func(c *fiber.Ctx) error {
 				return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
@@ -149,7 +149,7 @@ func UploadLimiter(cfg RateLimitConfig) fiber.Handler {
 		Max:        cfg.UploadLimit,
 		Expiration: cfg.UploadWindow,
 		KeyGenerator: func(c *fiber.Ctx) string {
-			return c.IP() + ":upload"
+			return ClientIP(c) + ":upload"
 		},
 		LimitReached: func(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
@@ -165,7 +165,7 @@ func DeleteLimiter(cfg RateLimitConfig) fiber.Handler {
 		Max:        cfg.DeleteLimit,
 		Expiration: cfg.DeleteWindow,
 		KeyGenerator: func(c *fiber.Ctx) string {
-			return c.IP() + ":delete"
+			return ClientIP(c) + ":delete"
 		},
 		LimitReached: func(c *fiber.Ctx) error {
 			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
@@ -175,10 +175,31 @@ func DeleteLimiter(cfg RateLimitConfig) fiber.Handler {
 	})
 }
 
+// ClientIP returns the real originating client IP for rate limiting.
+//
+// Cloudflare sits in front of this service and sets CF-Connecting-IP to the
+// originating client; a browser cannot forge it through Cloudflare. We do NOT
+// trust X-Real-IP (the docker nginx hop overwrites it with the upstream hop's
+// address) nor the leftmost X-Forwarded-For entry (attacker-controllable —
+// Cloudflare appends the real client after any client-supplied value). The TCP
+// peer (c.IP()) is only a degenerate fallback for non-Cloudflare/internal
+// access; without this helper every request collapses onto the proxy IP and
+// shares one rate-limit bucket.
+//
+// Trust note: CF-Connecting-IP is only authoritative while the origin is
+// reachable ONLY via Cloudflare. Lock the origin firewall to Cloudflare IP
+// ranges so an attacker cannot hit the origin directly and spoof this header.
+func ClientIP(c *fiber.Ctx) string {
+	if ip := strings.TrimSpace(c.Get("CF-Connecting-IP")); ip != "" {
+		return ip
+	}
+	return c.IP()
+}
+
 // RateLimitKey generates a unique key for rate limiting based on IP and token
 func RateLimitKey(c *fiber.Ctx) string {
-	// Get client IP
-	ip := c.IP()
+	// Get the real client IP (Cloudflare-aware)
+	ip := ClientIP(c)
 
 	// Get token from header
 	token := c.Get("Authorization")

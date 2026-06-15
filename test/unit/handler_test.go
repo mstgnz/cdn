@@ -5,126 +5,84 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/mstgnz/cdn/handler"
 	"github.com/mstgnz/cdn/service"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 )
 
-func setupMockMinio() *minio.Client {
-	client, err := minio.New("localhost:9000", &minio.Options{
-		Creds:  credentials.NewStaticV4("minioadmin", "minioadmin", ""),
+// deadMinio returns a MinIO client pointed at a closed port so the health
+// check's ListBuckets fails fast and deterministically (no infra required).
+func deadMinio(t *testing.T) *minio.Client {
+	t.Helper()
+	client, err := minio.New("127.0.0.1:1", &minio.Options{
+		Creds:  credentials.NewStaticV4("x", "y", ""),
 		Secure: false,
 	})
 	if err != nil {
-		return nil
+		t.Fatalf("minio client: %v", err)
 	}
 	return client
 }
 
-type MockAwsService struct {
-	mock.Mock
-	service.AwsService
-}
+// stubCache implements only the CacheService methods the health check uses,
+// reporting a healthy cache.
+type stubCache struct{ service.CacheService }
 
-type MockCacheService struct {
-	mock.Mock
-	service.CacheService
-}
+func (stubCache) Set(string, []byte, time.Duration) error { return nil }
+func (stubCache) Get(string) ([]byte, error)              { return []byte("ok"), nil }
 
-func TestHealthCheck(t *testing.T) {
-	// Setup
+// stubAws implements only the AwsService method the health check uses.
+type stubAws struct{ service.AwsService }
+
+func (stubAws) ListBuckets() ([]s3types.Bucket, error) { return nil, nil }
+
+// TestHealthCheck_Degraded verifies the real contract: when MinIO (a core
+// dependency) is unreachable, the endpoint reports degraded with 503 even
+// though cache and AWS are healthy. Deterministic and infra-free.
+func TestHealthCheck_Degraded(t *testing.T) {
 	app := fiber.New()
-	mockMinio := setupMockMinio()
-	mockAws := &MockAwsService{}
-	mockCache := &MockCacheService{}
+	hc := handler.NewHealthChecker(deadMinio(t), stubAws{}, stubCache{})
+	app.Get("/health", hc.HealthCheck)
 
-	healthChecker := handler.NewHealthChecker(mockMinio, mockAws, mockCache)
-	app.Get("/health", healthChecker.HealthCheck)
+	resp, err := app.Test(httptest.NewRequest("GET", "/health", nil), -1)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusServiceUnavailable, resp.StatusCode)
 
-	// Test cases
-	tests := []struct {
-		name           string
-		expectedStatus int
-		expectedBody   map[string]any
-	}{
-		{
-			name:           "Success Response",
-			expectedStatus: fiber.StatusOK,
-			expectedBody: map[string]any{
-				"success": true,
-				"message": "Healthy",
-				"data": map[string]any{
-					"minio": "Connected",
-					"aws":   "Connected",
-					"redis": "Connected",
-				},
-			},
-		},
-	}
+	var body map[string]any
+	assert.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("GET", "/health", nil)
-			resp, err := app.Test(req)
+	data, ok := body["data"].(map[string]any)
+	assert.True(t, ok, "expected data object")
+	assert.Equal(t, "degraded", data["status"])
 
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
-
-			var body map[string]any
-			err = json.NewDecoder(resp.Body).Decode(&body)
-
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedBody, body)
-		})
-	}
+	services, ok := data["services"].(map[string]any)
+	assert.True(t, ok, "expected services object")
+	assert.Contains(t, services["minio"], "unhealthy")
+	assert.Equal(t, "healthy", services["cache"])
+	assert.Equal(t, "healthy", services["aws"])
 }
 
-func TestUploadImage(t *testing.T) {
-	// Setup
+// TestUploadImage_InvalidForm verifies UploadImage rejects a non-multipart
+// body before touching storage (returns 400 "File Not Found!").
+func TestUploadImage_InvalidForm(t *testing.T) {
 	app := fiber.New()
-	mockMinio := setupMockMinio()
-	mockAws := &MockAwsService{}
-	mockImageService := &service.ImageService{}
+	h := handler.NewImage(deadMinio(t), stubAws{}, &service.ImageService{})
+	app.Post("/upload", h.UploadImage)
 
-	imageHandler := handler.NewImage(mockMinio, mockAws, mockImageService)
-	app.Post("/upload", imageHandler.UploadImage)
+	req := httptest.NewRequest("POST", "/upload", bytes.NewBuffer([]byte(`{}`)))
+	req.Header.Set("Content-Type", "application/json")
 
-	// Test cases
-	tests := []struct {
-		name           string
-		payload        []byte
-		expectedStatus int
-		expectedError  string
-	}{
-		{
-			name:           "Invalid Request",
-			payload:        []byte(`{}`),
-			expectedStatus: fiber.StatusBadRequest,
-			expectedError:  "Invalid request",
-		},
-	}
+	resp, err := app.Test(req, -1)
+	assert.NoError(t, err)
+	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest("POST", "/upload", bytes.NewBuffer(tt.payload))
-			req.Header.Set("Content-Type", "application/json")
-
-			resp, err := app.Test(req)
-
-			assert.NoError(t, err)
-			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
-
-			if tt.expectedError != "" {
-				var body map[string]any
-				err = json.NewDecoder(resp.Body).Decode(&body)
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expectedError, body["message"])
-			}
-		})
-	}
+	var body map[string]any
+	assert.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+	assert.Equal(t, "File Not Found!", body["message"])
 }

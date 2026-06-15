@@ -1,138 +1,64 @@
 package handler
 
 import (
-	"reflect"
-	"strconv"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/minio/minio-go/v7"
 )
 
-func TestNewMinioHandler(t *testing.T) {
-	type args struct {
-		minioClient *minio.Client
-	}
-	tests := []struct {
-		args args
-		want MinioHandler
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			if got := NewMinioHandler(tt.args.minioClient); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("NewMinioHandler() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+// TestMinioHandler_Integration drives the bucket lifecycle (create, exists,
+// list, remove) against a local MinIO. Skipped when MinIO is unreachable, so
+// it never breaks CI without infrastructure (see dialTestMinio).
+func TestMinioHandler_Integration(t *testing.T) {
+	cl := dialTestMinio(t)
+	h := NewMinioHandler(cl)
 
-func Test_minioHandler_BucketExists(t *testing.T) {
-	type fields struct {
-		minioClient *minio.Client
-	}
-	type args struct {
-		c *fiber.Ctx
-	}
-	tests := []struct {
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			m := minioHandler{
-				minioClient: tt.fields.minioClient,
-			}
-			if err := m.BucketExists(tt.args.c); (err != nil) != tt.wantErr {
-				t.Errorf("BucketExists() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
+	app := fiber.New()
+	app.Get("/minio/:bucket/exists", h.BucketExists)
+	app.Get("/minio/bucket-list", h.BucketList)
+	app.Get("/minio/:bucket/create", h.CreateBucket)
+	app.Delete("/minio/:bucket/delete", h.RemoveBucket)
 
-func Test_minioHandler_BucketList(t *testing.T) {
-	type fields struct {
-		minioClient *minio.Client
-	}
-	type args struct {
-		c *fiber.Ctx
-	}
-	tests := []struct {
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			m := minioHandler{
-				minioClient: tt.fields.minioClient,
-			}
-			if err := m.BucketList(tt.args.c); (err != nil) != tt.wantErr {
-				t.Errorf("BucketList() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
+	const bucket = "cdn-minio-itest"
+	// Ensure a clean slate even if a previous run left the bucket behind.
+	_ = doReq(t, app, "DELETE", "/minio/"+bucket+"/delete")
+	t.Cleanup(func() { _ = doReq(t, app, "DELETE", "/minio/"+bucket+"/delete") })
 
-func Test_minioHandler_CreateBucket(t *testing.T) {
-	type fields struct {
-		minioClient *minio.Client
-	}
-	type args struct {
-		c *fiber.Ctx
-	}
-	tests := []struct {
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			m := minioHandler{
-				minioClient: tt.fields.minioClient,
-			}
-			if err := m.CreateBucket(tt.args.c); (err != nil) != tt.wantErr {
-				t.Errorf("CreateBucket() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
+	t.Run("create", func(t *testing.T) {
+		resp := doReq(t, app, "GET", "/minio/"+bucket+"/create")
+		if resp.StatusCode != fiber.StatusCreated {
+			t.Fatalf("create status = %d, want 201", resp.StatusCode)
+		}
+	})
 
-func Test_minioHandler_RemoveBucket(t *testing.T) {
-	type fields struct {
-		minioClient *minio.Client
-	}
-	type args struct {
-		c *fiber.Ctx
-	}
-	tests := []struct {
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			m := minioHandler{
-				minioClient: tt.fields.minioClient,
-			}
-			if err := m.RemoveBucket(tt.args.c); (err != nil) != tt.wantErr {
-				t.Errorf("RemoveBucket() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
+	t.Run("exists after create", func(t *testing.T) {
+		resp := doReq(t, app, "GET", "/minio/"+bucket+"/exists")
+		if resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("exists status = %d, want 200", resp.StatusCode)
+		}
+	})
+
+	t.Run("list includes the bucket", func(t *testing.T) {
+		resp := doReq(t, app, "GET", "/minio/bucket-list")
+		if resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("list status = %d, want 200", resp.StatusCode)
+		}
+		if !decodeBody(t, resp).Success {
+			t.Fatal("expected success=true on bucket-list")
+		}
+	})
+
+	t.Run("remove", func(t *testing.T) {
+		resp := doReq(t, app, "DELETE", "/minio/"+bucket+"/delete")
+		if resp.StatusCode != fiber.StatusOK {
+			t.Fatalf("remove status = %d, want 200", resp.StatusCode)
+		}
+	})
+
+	t.Run("exists after remove", func(t *testing.T) {
+		resp := doReq(t, app, "GET", "/minio/"+bucket+"/exists")
+		if resp.StatusCode != fiber.StatusNotFound {
+			t.Fatalf("exists-after-remove status = %d, want 404", resp.StatusCode)
+		}
+	})
 }

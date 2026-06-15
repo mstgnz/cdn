@@ -1,25 +1,13 @@
 package service
 
-import (
-	"reflect"
-	"strconv"
-	"testing"
+import "testing"
 
-	"github.com/minio/minio-go/v7"
-)
-
+// TestMinioClient is a construction smoke test: MinioClient builds a client
+// from env (or defaults) without connecting, so it must return a non-nil
+// client and not panic. Real bucket/object operations are covered by the
+// env-gated integration tests in the handler package.
 func TestMinioClient(t *testing.T) {
-	tests := []struct {
-		want *minio.Client
-	}{
-		// TODO: Add test cases.
-		{},
-	}
-	for i, tt := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			if got := MinioClient(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("MinioClient() = %v, want %v", got, tt.want)
-			}
-		})
+	if got := MinioClient(); got == nil {
+		t.Fatal("MinioClient() returned nil")
 	}
 }

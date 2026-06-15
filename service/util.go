@@ -119,12 +119,14 @@ func CheckToken(c *fiber.Ctx) error {
 		return errors.New("invalid authorization format")
 	}
 
-	// Temizle - satır sonu karakterlerini kaldır
+	// Trim surrounding whitespace / newline characters
 	clientToken := strings.TrimSpace(getToken[1])
 	serverToken := strings.TrimSpace(config.GetEnvOrDefault("TOKEN", ""))
 
+	// Never echo the provided or server token back to the caller: the error is
+	// returned in the HTTP response and would leak the secret.
 	if clientToken != serverToken {
-		return errors.New(fmt.Sprintf("invalid token: Authorization: %s TOKEN: %s", getToken[1], config.GetEnvOrDefault("TOKEN", "null")))
+		return errors.New("invalid token")
 	}
 	return nil
 }
