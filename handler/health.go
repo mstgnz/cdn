@@ -24,6 +24,13 @@ func NewHealthChecker(minioClient *minio.Client, awsService service.AwsService, 
 	}
 }
 
+// isCoreHealthy reports whether the always-on core dependencies (MinIO object
+// store and Redis cache) are healthy. Optional integrations such as AWS S3 are
+// intentionally excluded so they cannot degrade the overall health signal.
+func isCoreHealthy(minioHealth, cacheHealth string) bool {
+	return minioHealth == "healthy" && cacheHealth == "healthy"
+}
+
 // HealthCheck handles health check requests
 func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -33,10 +40,15 @@ func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
 	awsHealth := h.checkAwsHealth(ctx)
 	cacheHealth := h.checkCacheHealth(ctx)
 
+	// AWS S3 is an optional, opt-in integration (only used when a request asks
+	// for aws_upload). Its status is reported for visibility but it must NOT
+	// flip the overall health, otherwise an unconfigured/placeholder AWS makes
+	// the whole CDN report "degraded" (503) while MinIO + cache are fine, and
+	// uptime monitors flap on it. Overall health = the always-on core only.
 	overallStatus := "healthy"
 	statusCode := fiber.StatusOK
 
-	if minioHealth != "healthy" || awsHealth != "healthy" || cacheHealth != "healthy" {
+	if !isCoreHealthy(minioHealth, cacheHealth) {
 		overallStatus = "degraded"
 		statusCode = fiber.StatusServiceUnavailable
 	}

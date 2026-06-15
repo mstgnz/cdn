@@ -2,8 +2,10 @@ package observability
 
 import (
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
@@ -204,18 +206,13 @@ var (
 	)
 )
 
-// MetricsHandler HTTP handler for Prometheus metrics
+// MetricsHandler exposes the Prometheus metrics in the standard exposition
+// format. It delegates to promhttp with ContinueOnError so that a single
+// inconsistent metric family does not turn the whole endpoint into a 500
+// (the previous behaviour); valid metrics are still served.
 func MetricsHandler(c *fiber.Ctx) error {
-	metrics, err := prometheus.DefaultGatherer.Gather()
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString("Error collecting metrics")
-	}
-
-	data := ""
-	for _, mf := range metrics {
-		data += mf.String() + "\n"
-	}
-
-	c.Set("Content-Type", "text/plain")
-	return c.SendString(data)
+	h := promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+	})
+	return adaptor.HTTPHandler(h)(c)
 }

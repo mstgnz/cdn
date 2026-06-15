@@ -12,17 +12,22 @@ func PrometheusMiddleware() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		start := time.Now()
 		method := c.Method()
-		path := c.Path()
 
 		// Process request
 		chainErr := c.Next()
 
-		// Record metrics
+		// Record metrics. Use the matched ROUTE PATTERN (e.g. "/:bucket/*")
+		// as the endpoint label, never the raw request path. On a CDN the raw
+		// path is effectively unbounded (every distinct object URL), which
+		// would create one Prometheus series per URL: an unbounded memory leak
+		// and a /metrics scrape that grows without limit. The route pattern
+		// keeps cardinality bounded to the number of registered routes.
+		endpoint := c.Route().Path
 		duration := time.Since(start).Seconds()
 		status := strconv.Itoa(c.Response().StatusCode())
 
-		RequestCounter.WithLabelValues(method, path, status).Inc()
-		RequestDuration.WithLabelValues(method, path).Observe(duration)
+		RequestCounter.WithLabelValues(method, endpoint, status).Inc()
+		RequestDuration.WithLabelValues(method, endpoint).Observe(duration)
 
 		return chainErr
 	}
