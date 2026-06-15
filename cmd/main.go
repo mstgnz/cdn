@@ -17,6 +17,8 @@ import (
 	"github.com/gofiber/websocket/v2"
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
+	"gopkg.in/gographics/imagick.v3/imagick"
+
 	"github.com/mstgnz/cdn/handler"
 	"github.com/mstgnz/cdn/pkg/config"
 	"github.com/mstgnz/cdn/pkg/middleware"
@@ -37,6 +39,12 @@ func main() {
 	// Logger
 	observability.InitLogger()
 	logger := observability.Logger()
+
+	// Initialize the ImageMagick environment once for the whole process.
+	// MagickWandGenesis/Terminus are NOT reentrant and must not be called
+	// per-request; doing so corrupts the shared environment under concurrency.
+	imagick.Initialize()
+	defer imagick.Terminate()
 
 	// Context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())

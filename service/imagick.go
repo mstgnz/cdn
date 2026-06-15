@@ -13,15 +13,19 @@ import (
 
 // https://github.com/gographics/imagick/tree/master/examples
 // https://pkg.go.dev/gopkg.in/gographics/imagick.v3/imagick
+//
+// NOTE: imagick.Initialize() / imagick.Terminate() are process-wide
+// (MagickWandGenesis / MagickWandTerminus) and are called exactly once in
+// cmd/main.go (and once per test run via TestMain). They must NOT be called
+// per operation: doing so re-initializes the global environment on every
+// request and is not reentrant, which corrupts state and crashes under
+// concurrent load. Each operation only creates and destroys its own wand.
 
 type ImageService struct {
 	MinioClient *minio.Client
 }
 
 func (s *ImageService) ImagickGetWidthHeight(image []byte) (error, uint, uint) {
-	imagick.Initialize()
-	defer imagick.Terminate()
-
 	mw := imagick.NewMagickWand()
 	defer mw.Destroy()
 
@@ -32,9 +36,6 @@ func (s *ImageService) ImagickGetWidthHeight(image []byte) (error, uint, uint) {
 }
 
 func (s *ImageService) ImagickFormat(image []byte) (error, string) {
-	imagick.Initialize()
-	defer imagick.Terminate()
-
 	mw := imagick.NewMagickWand()
 	defer mw.Destroy()
 
@@ -46,9 +47,6 @@ func (s *ImageService) ImagickFormat(image []byte) (error, string) {
 }
 
 func (s *ImageService) ImagickResize(image []byte, targetWidth, targetHeight uint) []byte {
-	imagick.Initialize()
-	defer imagick.Terminate()
-
 	mw := imagick.NewMagickWand()
 	defer mw.Destroy()
 
@@ -112,9 +110,6 @@ func (s *ImageService) IsImageFile(data []byte) bool {
 
 // GetImageInfo returns width, height and format of an image
 func (s *ImageService) GetImageInfo(data []byte) (width uint, height uint, format string, err error) {
-	imagick.Initialize()
-	defer imagick.Terminate()
-
 	mw := imagick.NewMagickWand()
 	defer mw.Destroy()
 
@@ -150,9 +145,6 @@ func (s *ImageService) IsResizable(data []byte) bool {
 
 // ProcessImage processes an image (resize, optimize, etc.)
 func (s *ImageService) ProcessImage(data []byte) ([]byte, error) {
-	imagick.Initialize()
-	defer imagick.Terminate()
-
 	mw := imagick.NewMagickWand()
 	defer mw.Destroy()
 
@@ -216,9 +208,6 @@ func (s *ImageService) ProcessImage(data []byte) ([]byte, error) {
 
 // ResizeImage resizes an image to the specified dimensions
 func (s *ImageService) ResizeImage(data []byte, width, height int) ([]byte, error) {
-	imagick.Initialize()
-	defer imagick.Terminate()
-
 	// Verify that the input is a valid, resizable image
 	if !s.IsResizable(data) {
 		return nil, fmt.Errorf("file is not a resizable image")
