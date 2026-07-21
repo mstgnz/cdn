@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"strconv"
@@ -61,6 +62,82 @@ type UploadUrlRequest struct {
 	Bucket    string `json:"bucket" validate:"required"`
 	URL       string `json:"url" validate:"required,url"`
 	AWSUpload bool   `json:"aws_upload"`
+	Optimize  bool   `json:"optimize"`
+}
+
+// optimizeSem bounds the number of concurrent ImageMagick optimizations
+// independently of the per-endpoint upload concurrency, since a re-encode is
+// CPU/memory heavy. Initialized lazily so OPTIMIZE_MAX_CONCURRENT is read after
+// .env is loaded.
+var (
+	optimizeSemOnce sync.Once
+	optimizeSem     chan struct{}
+)
+
+func acquireOptimizeSlot() func() {
+	optimizeSemOnce.Do(func() {
+		n := config.GetEnvAsIntOrDefault("OPTIMIZE_MAX_CONCURRENT", 4)
+		if n < 1 {
+			n = 1
+		}
+		optimizeSem = make(chan struct{}, n)
+	})
+	optimizeSem <- struct{}{}
+	return func() { <-optimizeSem }
+}
+
+// validateImageContent enforces that a file whose extension marks it an image
+// actually is a valid image. Raster formats must decode via ImageMagick; SVG is
+// validated structurally (it is XML/text, not a raster the decoder reliably
+// reads). Non-image extensions return (0,0,nil) and upload unchanged. Honors the
+// VALIDATE_FILE toggle: when validation is disabled it never rejects. On success
+// it returns the decoded dimensions (0,0 for SVG).
+func (i image) validateImageContent(filename string, content []byte) (uint, uint, error) {
+	if !service.IsImageFile(filename) {
+		return 0, 0, nil
+	}
+	validate := config.GetEnvAsBoolOrDefault("VALIDATE_FILE", true)
+
+	if strings.HasSuffix(strings.ToLower(filename), ".svg") {
+		if !isValidSVG(content) && validate {
+			return 0, 0, fmt.Errorf("invalid image content")
+		}
+		return 0, 0, nil
+	}
+
+	w, h, _, err := i.imageService.GetImageInfo(content)
+	if err != nil {
+		if validate {
+			return 0, 0, fmt.Errorf("invalid image content")
+		}
+		return 0, 0, nil
+	}
+	return w, h, nil
+}
+
+// isValidSVG does a lightweight structural check: a valid SVG must contain an
+// <svg root element near the top. Rejects e.g. a PDF or script renamed to .svg.
+func isValidSVG(content []byte) bool {
+	head := content
+	if len(head) > 2048 {
+		head = head[:2048]
+	}
+	return bytes.Contains(bytes.ToLower(head), []byte("<svg"))
+}
+
+// maybeOptimize re-encodes content per opts, bounding ImageMagick concurrency.
+// It never fails the upload: on any optimization error it logs and returns the
+// original bytes with zero dimensions (caller keeps whatever dims it had).
+func (i image) maybeOptimize(content []byte, opts service.OptimizeOptions) ([]byte, uint, uint) {
+	release := acquireOptimizeSlot()
+	defer release()
+
+	out, w, h, err := i.imageService.OptimizeImage(content, opts)
+	if err != nil {
+		log.Printf("Warning: image optimization failed, storing original: %v", err)
+		return content, 0, 0
+	}
+	return out, w, h
 }
 
 // BatchUploadRequest represents the request body for batch uploads
@@ -109,6 +186,11 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	bucket := c.Params("bucket")
 	objectName := c.Params("*")
 
+	// Reject traversal-like keys instead of forwarding them verbatim to MinIO.
+	if service.HasUnsafeObjectKey(objectName) {
+		return c.SendFile("./public/notfound.png")
+	}
+
 	var width uint
 	var height uint
 	var resize bool
@@ -125,6 +207,14 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
 	if err != nil {
 		return c.SendFile("./public/notfound.png")
+	}
+
+	// SVG can carry inline <script>; http.DetectContentType cannot identify it,
+	// so the guard keys off the object-name extension. CSP + sandbox neutralizes
+	// script execution on direct navigation while keeping the SVG viewable when
+	// embedded via <img> (where scripts never run anyway).
+	if strings.HasSuffix(strings.ToLower(objectName), ".svg") {
+		c.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 	}
 
 	// Resize path: ImageMagick must decode the whole image, so the object is
@@ -252,7 +342,9 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		sanitizedPath := service.SanitizeObjectName(path)
 		objectName = sanitizedPath + "/" + imageName
 	}
-	contentType := file.Header["Content-Type"][0]
+	// Use Header.Get: a multipart part may omit Content-Type, and indexing the
+	// raw header slice ([0]) would panic on a nil/empty slice.
+	contentType := file.Header.Get("Content-Type")
 	fileSize := file.Size
 
 	// size
@@ -271,21 +363,48 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		fileSize = int64(len(fileContent))
 		contentType = http.DetectContentType(fileContent)
 
-		// set size
-		var (
-			orjWidth  uint
-			orjHeight uint
-		)
-		if service.IsImageFile(file.Filename) {
-			if err, orjWidth, orjHeight = i.imageService.ImagickGetWidthHeight(fileContent); err == nil {
-				c.Set("Width", strconv.Itoa(int(orjWidth)))
-				c.Set("Height", strconv.Itoa(int(orjHeight)))
-			}
+		// A file with an image extension must actually be a valid image; this
+		// also yields the original dimensions in a single decode. Non-image
+		// files pass through untouched.
+		orjWidth, orjHeight, verr := i.validateImageContent(file.Filename, fileContent)
+		if verr != nil {
+			return service.Response(c, fiber.StatusBadRequest, false, "invalid image content", map[string]string{
+				"code": "INVALID_IMAGE_CONTENT",
+			})
+		}
+		if orjWidth > 0 && orjHeight > 0 {
+			c.Set("Width", strconv.Itoa(int(orjWidth)))
+			c.Set("Height", strconv.Itoa(int(orjHeight)))
 		}
 
-		// resize
+		// resize / optimize
 		resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
-		if resize && orjWidth > 0 && orjHeight > 0 {
+		optimize := c.FormValue("optimize") == "true"
+
+		switch {
+		case optimize && service.IsImageFile(file.Filename):
+			// Opt-in visually-lossless optimization. Explicit width/height win
+			// over the max-dimension cap, and quality/strip apply in one pass.
+			opts := service.DefaultOptimizeOptions()
+			if resize {
+				opts.TargetWidth = width
+				opts.TargetHeight = height
+			}
+			optimized, ow, oh := i.maybeOptimize(fileContent, opts)
+			fileContent = optimized
+			if tempFile, err := service.CreateFile(fileContent); err == nil {
+				defer func() {
+					_ = tempFile.Close()
+				}()
+				fileSize = int64(len(fileContent))
+				if ow > 0 && oh > 0 {
+					c.Set("Width", strconv.Itoa(int(ow)))
+					c.Set("Height", strconv.Itoa(int(oh)))
+				}
+				c.Set("Content-Length", strconv.Itoa(len(fileContent)))
+				fileBuffer = tempFile
+			}
+		case resize && orjWidth > 0 && orjHeight > 0:
 			width, height = service.RatioWidthHeight(orjWidth, orjHeight, width, height)
 			fileContent = i.imageService.ImagickResize(fileContent, width, height)
 			if tempFile, err := service.CreateFile(fileContent); err == nil {
@@ -356,6 +475,13 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
+	// SSRF guard: reject non-http(s) schemes and literal private/loopback/
+	// metadata targets before any request is made. Ordered before the MinIO
+	// call so it is exercised without a live storage backend.
+	if err := validator.ValidateUploadURL(req.URL); err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+	}
+
 	// Check to see if already exist bucket
 	exists, err := i.minioClient.BucketExists(ctx, req.Bucket)
 	if err != nil && !exists {
@@ -371,7 +497,7 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!", nil)
 	}
 
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	httpClient := validator.NewSafeHTTPClient(30 * time.Second)
 	res, err := httpClient.Get(req.URL)
 	if err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
@@ -388,6 +514,19 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	// Automatically detect content type
 	contentType := http.DetectContentType(content)
 
+	// Opt-in optimization. Non-image / non-resizable content passes through
+	// unchanged, so this runs safely before the file-type checks below. Format
+	// is preserved, so the content type is re-detected to keep the invariant.
+	if req.Optimize {
+		optimized, ow, oh := i.maybeOptimize(content, service.DefaultOptimizeOptions())
+		content = optimized
+		contentType = http.DetectContentType(content)
+		if ow > 0 && oh > 0 {
+			c.Set("Width", strconv.Itoa(int(ow)))
+			c.Set("Height", strconv.Itoa(int(oh)))
+		}
+	}
+
 	// Determine file extension from content type
 	extension := filetype.GetExtensionFromContentType(contentType)
 	if extension == "" {
@@ -396,6 +535,14 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		if !filetype.IsValidExtension(extension) {
 			return service.Response(c, fiber.StatusBadRequest, false, "Unsupported or unrecognized file type", nil)
 		}
+	}
+
+	// If the resolved type is an image, the downloaded bytes must be a valid
+	// image; non-image content uploads unchanged.
+	if _, _, verr := i.validateImageContent("f."+extension, content); verr != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid image content", map[string]string{
+			"code": "INVALID_IMAGE_CONTENT",
+		})
 	}
 
 	randomName := uuid.New().String()
@@ -461,6 +608,11 @@ func (i image) DeleteImage(c *fiber.Ctx) error {
 
 	if len(bucket) == 0 || len(object) == 0 {
 		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.", nil)
+	}
+
+	// Reject traversal-like keys instead of forwarding them verbatim to MinIO.
+	if service.HasUnsafeObjectKey(object) {
+		return service.Response(c, fiber.StatusBadRequest, false, "invalid object key", nil)
 	}
 
 	// Check if the bucket exists on Minio
@@ -599,6 +751,7 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 	}
 
 	awsUpload := form.Value["aws_upload"] != nil && form.Value["aws_upload"][0] == "true"
+	optimize := form.Value["optimize"] != nil && form.Value["optimize"][0] == "true"
 
 	// Check bucket existence
 	exists, err := i.minioClient.BucketExists(context.Background(), bucket[0])
@@ -614,6 +767,13 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 	files := form.File["files"]
 	if len(files) == 0 {
 		return service.Response(c, fiber.StatusBadRequest, false, "No files provided", nil)
+	}
+
+	// Cap the batch size so a huge multipart request cannot pre-allocate an
+	// unbounded result channel / slice (memory DoS).
+	maxBatch := config.GetEnvAsIntOrDefault("MAX_BATCH_FILES", 100)
+	if maxBatch > 0 && len(files) > maxBatch {
+		return service.Response(c, fiber.StatusBadRequest, false, fmt.Sprintf("Too many files in one batch (max %d)", maxBatch), nil)
 	}
 
 	results := make([]map[string]any, 0)
@@ -659,14 +819,49 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 				objectName = sanitizedPath + "/" + objectName
 			}
 
-			// Upload to MinIO
+			// Determine the bytes to store. Image-extension files are buffered so
+			// their content can be validated as a real image (and optionally
+			// optimized); non-images stream straight through, byte-identical to
+			// the pre-feature behavior.
 			contentType := file.Header.Get("Content-Type")
+			uploadSize := file.Size
+			var payload []byte
+			optimized := false
+			if service.IsImageFile(file.Filename) {
+				raw, readErr := io.ReadAll(fileContent)
+				if readErr != nil {
+					result["success"] = false
+					result["error"] = readErr.Error()
+					resultChan <- result
+					return
+				}
+				if _, _, verr := i.validateImageContent(file.Filename, raw); verr != nil {
+					result["success"] = false
+					result["error"] = "invalid image content"
+					resultChan <- result
+					return
+				}
+				if optimize {
+					raw, _, _ = i.maybeOptimize(raw, service.DefaultOptimizeOptions())
+					optimized = true
+				}
+				payload = raw
+				uploadSize = int64(len(payload))
+				contentType = http.DetectContentType(payload)
+			}
+
+			var minioReader io.Reader = fileContent
+			if payload != nil {
+				minioReader = bytes.NewReader(payload)
+			}
+
+			// Upload to MinIO
 			_, err = i.minioClient.PutObject(
 				context.Background(),
 				bucket[0],
 				objectName,
-				fileContent,
-				file.Size,
+				minioReader,
+				uploadSize,
 				minio.PutObjectOptions{ContentType: contentType},
 			)
 
@@ -679,8 +874,14 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 
 			// Upload to AWS if requested
 			if awsUpload {
-				fileContent.Seek(0, 0)
-				_, err = i.awsService.S3PutObject(bucket[0], objectName, fileContent)
+				var awsReader io.Reader
+				if payload != nil {
+					awsReader = bytes.NewReader(payload)
+				} else {
+					_, _ = fileContent.Seek(0, 0)
+					awsReader = fileContent
+				}
+				_, err = i.awsService.S3PutObject(bucket[0], objectName, awsReader)
 				if err != nil {
 					result["aws_error"] = err.Error()
 				}
@@ -688,6 +889,9 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 
 			result["success"] = true
 			result["object_name"] = objectName
+			if optimized {
+				result["size"] = uploadSize
+			}
 			resultChan <- result
 		}(file)
 	}
@@ -715,6 +919,13 @@ func (i *image) BatchDelete(c *fiber.Ctx) error {
 
 	if err := validator.ValidateStruct(req); err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+	}
+
+	// Cap the batch size so a huge JSON array cannot pre-allocate an unbounded
+	// result channel / slice (memory DoS).
+	maxBatch := config.GetEnvAsIntOrDefault("MAX_BATCH_FILES", 100)
+	if maxBatch > 0 && len(req.Files) > maxBatch {
+		return service.Response(c, fiber.StatusBadRequest, false, fmt.Sprintf("Too many files in one batch (max %d)", maxBatch), nil)
 	}
 
 	// Check bucket existence

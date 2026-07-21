@@ -3,6 +3,7 @@ package middleware
 import (
 	"crypto/subtle"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -214,11 +215,24 @@ func RateLimitKey(c *fiber.Ctx) string {
 	return fmt.Sprintf("%s:%s", ip, token)
 }
 
-// NewAdvancedRateLimiter creates a new rate limiter middleware with Redis storage
+// NewAdvancedRateLimiter creates a new rate limiter middleware with Redis
+// storage. If Redis is unreachable at boot it retries briefly and then fails
+// open (serves without rate limiting) instead of crashing the process, so a
+// transient Redis outage cannot take down the whole service. Cloudflare/nginx
+// still provide a coarse protection layer in that window.
 func NewAdvancedRateLimiter(max int, duration time.Duration) fiber.Handler {
-	storage, err := NewRedisStorage()
-	if err != nil {
-		panic(err)
+	var storage *RedisStorage
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if storage, err = NewRedisStorage(); err == nil {
+			break
+		}
+		slog.Warn("rate limiter: redis unavailable, retrying", "attempt", attempt, "error", err)
+		time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+	}
+	if err != nil || storage == nil {
+		slog.Error("rate limiter: redis unavailable after retries, disabling rate limiting (fail-open)", "error", err)
+		return func(c *fiber.Ctx) error { return c.Next() }
 	}
 
 	config := limiter.Config{

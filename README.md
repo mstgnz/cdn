@@ -144,7 +144,27 @@ REDIS_URL=redis://localhost:6379
 DISABLE_DELETE=false
 DISABLE_UPLOAD=false
 DISABLE_GET=false
+
+# ImageMagick resource limits + on-the-fly resize cap
+IMAGICK_MEMORY_LIMIT_MB=512
+IMAGICK_AREA_LIMIT_MP=256
+MAX_RESIZE_DIMENSION=4096
+
+# Opt-in upload optimization (defaults are visually lossless)
+OPTIMIZE_MAX_DIMENSION=2560
+OPTIMIZE_JPEG_QUALITY=85
+OPTIMIZE_WEBP_QUALITY=85
+OPTIMIZE_PNG_QUALITY=95
+
+# SSRF guard for /upload-url (true only for self-hosted internal fetches)
+UPLOAD_URL_ALLOW_PRIVATE=false
 ```
+
+> **Breaking change:** `TOKEN` is now **mandatory**. The server refuses to boot
+> with an empty `TOKEN`, because an empty server token previously let an empty
+> client token bypass authentication on every protected endpoint. Set a
+> non-empty `TOKEN` in `.env` before deploying. See the full env reference in
+> [`.env.example`](.env.example).
 
 ### API Usage
 
@@ -158,6 +178,23 @@ curl -X POST http://localhost:9090/upload \
   -F "file=@image.jpg" \
   -F "bucket=your-bucket" \
   -F "path=your/path"
+```
+
+With no extra parameter the original bytes are stored unchanged. Add
+`optimize=true` to store a visually-lossless, size-reduced version instead
+(re-encode + metadata strip + longest-side capped at `OPTIMIZE_MAX_DIMENSION`,
+default 2560px). Animated GIFs and non-image files pass through untouched, and
+if optimization ever fails the original is stored, so an upload never fails
+because of it. Explicit `width`/`height` form values take precedence over the
+cap. The same `optimize` flag works on `/batch/upload` (form field) and
+`/upload-url` (JSON field).
+
+```bash
+curl -X POST http://localhost:9090/upload \
+  -H "Authorization: your-token" \
+  -F "file=@photo.jpg" \
+  -F "bucket=your-bucket" \
+  -F "optimize=true"
 ```
 
 2. Get an image with resizing:

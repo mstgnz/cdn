@@ -3,6 +3,7 @@ package service
 import (
 	"bufio"
 	"bytes"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
@@ -119,16 +120,25 @@ func CheckToken(c *fiber.Ctx) error {
 		return errors.New("invalid authorization format")
 	}
 
-	// Trim surrounding whitespace / newline characters
-	clientToken := strings.TrimSpace(getToken[1])
-	serverToken := strings.TrimSpace(config.GetEnvOrDefault("TOKEN", ""))
-
-	// Never echo the provided or server token back to the caller: the error is
-	// returned in the HTTP response and would leak the secret.
-	if clientToken != serverToken {
+	// Never echo the provided or server token back to the caller.
+	if !TokenValid(getToken[1]) {
 		return errors.New("invalid token")
 	}
 	return nil
+}
+
+// TokenValid reports whether clientToken matches the configured server TOKEN
+// using a constant-time comparison. An empty token on either side is never
+// valid (an empty server token must not authenticate an empty client token).
+// Use this where the token arrives outside the Authorization header, e.g. a
+// WebSocket query parameter that browsers cannot set as a header.
+func TokenValid(clientToken string) bool {
+	clientToken = strings.TrimSpace(clientToken)
+	serverToken := strings.TrimSpace(config.GetEnvOrDefault("TOKEN", ""))
+	if clientToken == "" || serverToken == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(clientToken), []byte(serverToken)) == 1
 }
 
 func Response(c *fiber.Ctx, code int, success bool, message string, data any) error {
@@ -137,6 +147,22 @@ func Response(c *fiber.Ctx, code int, success bool, message string, data any) er
 		"message": message,
 		"data":    data,
 	})
+}
+
+// HasUnsafeObjectKey reports whether an object key is empty or contains a ".."
+// path segment. Object stores treat keys opaquely, but rejecting traversal-like
+// segments keeps read/delete keys aligned with the sanitized keys upload writes
+// and avoids surprises if a key is ever mapped onto a filesystem path.
+func HasUnsafeObjectKey(key string) bool {
+	if strings.TrimSpace(key) == "" {
+		return true
+	}
+	for _, seg := range strings.Split(key, "/") {
+		if seg == ".." {
+			return true
+		}
+	}
+	return false
 }
 
 func IsImageFile(filename string) bool {
@@ -184,6 +210,26 @@ func GetWidthAndHeight(c *fiber.Ctx, requestType string) (bool, uint, uint) {
 		}
 		if getHeight, err := strconv.Atoi(c.Query("height")); err == nil {
 			height = getHeight
+		}
+	}
+
+	// Clamp requested dimensions. Negative values are floored to 0 (a negative
+	// int cast to uint would otherwise wrap to a huge value and allocate a giant
+	// canvas), and both axes are capped so the unauthenticated GET resize path
+	// cannot be driven to exhaust memory with e.g. w:99999/h:99999.
+	maxDim := config.GetEnvAsIntOrDefault("MAX_RESIZE_DIMENSION", 4096)
+	if width < 0 {
+		width = 0
+	}
+	if height < 0 {
+		height = 0
+	}
+	if maxDim > 0 {
+		if width > maxDim {
+			width = maxDim
+		}
+		if height > maxDim {
+			height = maxDim
 		}
 	}
 

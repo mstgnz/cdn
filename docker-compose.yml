@@ -4,6 +4,10 @@ services:
       context: .
       dockerfile: dockerfile
     restart: always
+    # Inject configuration from .env at runtime instead of baking it into the
+    # image (see .dockerignore, which now excludes .env from the build context).
+    env_file:
+      - .env
     deploy:
       mode: replicated
       replicas: 3

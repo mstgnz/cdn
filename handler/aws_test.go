@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -30,7 +31,7 @@ func (m *mockAwsService) ListBuckets() ([]s3types.Bucket, error) {
 	return m.listBuckets, m.listBucketsErr
 }
 func (m *mockAwsService) GlacierVaultList() *glacier.ListVaultsOutput { return m.vaultList }
-func (m *mockAwsService) IsConnected() bool                          { return true }
+func (m *mockAwsService) IsConnected() bool                           { return true }
 
 func (m *mockAwsService) GlacierUploadArchive(string, []byte) (*glacier.UploadArchiveOutput, error) {
 	return nil, nil
@@ -62,7 +63,19 @@ func newAwsApp(mock service.AwsService) *fiber.App {
 	app.Get("/aws/bucket-list", h.BucketList)
 	app.Post("/aws/glacier/:vault/jobs/:jobId/async-download", h.GlacierInitiateAsyncDownload)
 	app.Get("/aws/glacier/downloads/:downloadJobId/status", h.GlacierCheckDownloadStatus)
+	app.Get("/aws/glacier/:vault/jobs/:jobId/status", h.GlacierJobStatus)
 	return app
+}
+
+// TestAwsHandler_JobStatus_NilResultNoPanic guards the nil-deref hardening:
+// the mock returns (nil, nil) from GlacierDescribeJob, so the handler must
+// respond 500 gracefully instead of panicking on a nil pointer deref.
+func TestAwsHandler_JobStatus_NilResultNoPanic(t *testing.T) {
+	app := newAwsApp(&mockAwsService{})
+	resp := doReq(t, app, "GET", "/aws/glacier/myvault/jobs/job123/status")
+	if resp.StatusCode != fiber.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (no panic on nil job status)", resp.StatusCode)
+	}
 }
 
 func TestAwsHandler_BucketExists(t *testing.T) {
@@ -145,5 +158,43 @@ func TestAwsHandler_CheckDownloadStatus_NotFound(t *testing.T) {
 	resp := doReq(t, app, "GET", "/aws/glacier/downloads/does-not-exist/status")
 	if resp.StatusCode != fiber.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
+	}
+}
+
+// TestResolveLocalDownloadPath guards the Glacier path-traversal fix. Traversal
+// is neutralized by containment: "../" segments are collapsed against a virtual
+// root so the result can never escape base. Absolute/empty targets are rejected.
+func TestResolveLocalDownloadPath(t *testing.T) {
+	const base = "/tmp/glacier_downloads"
+	cases := []struct {
+		name    string
+		target  string
+		want    string
+		wantErr bool
+	}{
+		{"absolute", "/etc/passwd", "", true},
+		{"empty", "", "", true},
+		{"traversal contained", "../../etc/passwd", base + "/etc/passwd", false},
+		{"nested traversal contained", "a/../../x", base + "/x", false},
+		{"valid nested", "a/b/c.bin", base + "/a/b/c.bin", false},
+		{"valid inner dotdot", "a/../b.bin", base + "/b.bin", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveLocalDownloadPath(base, tc.target)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("resolveLocalDownloadPath(%q) err=%v, wantErr=%v", tc.target, err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if got != tc.want {
+				t.Fatalf("resolveLocalDownloadPath(%q) = %q, want %q", tc.target, got, tc.want)
+			}
+			// Security invariant: the result must always stay within base.
+			if got != base && !strings.HasPrefix(got, base+"/") {
+				t.Fatalf("resolveLocalDownloadPath(%q) escaped base: %q", tc.target, got)
+			}
+		})
 	}
 }

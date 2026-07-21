@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image"
 	"image/color"
+	"image/gif"
 	"image/png"
 	"os"
 	"sync"
@@ -126,3 +127,101 @@ func TestImagickConcurrentResize(t *testing.T) {
 type resizeError struct{ msg string }
 
 func (e *resizeError) Error() string { return e.msg }
+
+// makeTestGIF builds a tiny single-frame GIF so the GIF-passthrough path can be
+// exercised without a binary fixture.
+func makeTestGIF(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewPaletted(image.Rect(0, 0, w, h), []color.Color{color.Black, color.White})
+	var buf bytes.Buffer
+	if err := gif.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("failed to encode test gif: %v", err)
+	}
+	return buf.Bytes()
+}
+
+func TestOptimizeImage_CapsLongestSide(t *testing.T) {
+	s := &ImageService{}
+	src := makeTestPNG(t, 300, 100)
+
+	out, w, h, err := s.OptimizeImage(src, OptimizeOptions{MaxDimension: 150, PNGQuality: 95, Strip: true})
+	if err != nil {
+		t.Fatalf("OptimizeImage error: %v", err)
+	}
+	if w != 150 || h != 50 {
+		t.Fatalf("expected 150x50, got %dx%d", w, h)
+	}
+	dw, dh := decodeDimensions(t, out)
+	if dw != 150 || dh != 50 {
+		t.Fatalf("decoded dims = %dx%d, want 150x50", dw, dh)
+	}
+}
+
+func TestOptimizeImage_NoCapWhenSmaller(t *testing.T) {
+	s := &ImageService{}
+	src := makeTestPNG(t, 120, 80)
+
+	_, w, h, err := s.OptimizeImage(src, OptimizeOptions{MaxDimension: 2560, PNGQuality: 95, Strip: true})
+	if err != nil {
+		t.Fatalf("OptimizeImage error: %v", err)
+	}
+	if w != 120 || h != 80 {
+		t.Fatalf("expected dims unchanged 120x80, got %dx%d", w, h)
+	}
+}
+
+func TestOptimizeImage_TargetDimsOverrideCap(t *testing.T) {
+	s := &ImageService{}
+	src := makeTestPNG(t, 400, 200)
+
+	// Explicit target must win over the (smaller) MaxDimension cap.
+	_, w, h, err := s.OptimizeImage(src, OptimizeOptions{MaxDimension: 50, TargetWidth: 200, TargetHeight: 100, PNGQuality: 95})
+	if err != nil {
+		t.Fatalf("OptimizeImage error: %v", err)
+	}
+	if w != 200 || h != 100 {
+		t.Fatalf("expected target 200x100, got %dx%d", w, h)
+	}
+}
+
+func TestOptimizeImage_NonImagePassthrough(t *testing.T) {
+	s := &ImageService{}
+	src := []byte("not an image")
+
+	out, w, h, err := s.OptimizeImage(src, DefaultOptimizeOptions())
+	if err != nil {
+		t.Fatalf("expected nil error for non-image passthrough, got %v", err)
+	}
+	if !bytes.Equal(out, src) || w != 0 || h != 0 {
+		t.Fatalf("non-image input must be returned unchanged")
+	}
+}
+
+func TestOptimizeImage_GIFPassthrough(t *testing.T) {
+	s := &ImageService{}
+	src := makeTestGIF(t, 64, 48)
+
+	out, _, _, err := s.OptimizeImage(src, OptimizeOptions{MaxDimension: 10, Strip: true})
+	if err != nil {
+		t.Fatalf("OptimizeImage error: %v", err)
+	}
+	// GIF must be returned untouched (single-frame resize would break animation).
+	if !bytes.Equal(out, src) {
+		t.Fatalf("GIF input must pass through unchanged")
+	}
+}
+
+func TestProcessImage_WrapperStillWorks(t *testing.T) {
+	s := &ImageService{}
+	src := makeTestPNG(t, 2500, 2500)
+
+	out, err := s.ProcessImage(src)
+	if err != nil {
+		t.Fatalf("ProcessImage error: %v", err)
+	}
+	dw, dh := decodeDimensions(t, out)
+	// Wrapper keeps the original 2000px cap.
+	if dw > 2000 || dh > 2000 {
+		t.Fatalf("ProcessImage did not cap at 2000, got %dx%d", dw, dh)
+	}
+}

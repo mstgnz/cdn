@@ -1,0 +1,8 @@
+# Secrets are injected at runtime via docker-compose env_file, never baked into
+# the image layers.
+.env
+.env.*
+
+# Version control
+.git
+.gitignore

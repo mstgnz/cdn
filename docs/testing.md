@@ -7,11 +7,13 @@ The project requires ImageMagick for image processing operations. To ensure a co
 ## Running Tests
 
 1. Build and start the containers:
+
 ```bash
 docker-compose up -d
 ```
 
 2. Run tests inside the container:
+
 ```bash
 # Run all tests
 docker exec cdn-golang go test ./... -v
@@ -23,6 +25,7 @@ docker exec cdn-golang go test ./handler -v
 ```
 
 3. Run tests with coverage:
+
 ```bash
 docker exec cdn-golang go test ./... -coverprofile=coverage.out
 docker exec cdn-golang go tool cover -html=coverage.out -o coverage.html
@@ -31,6 +34,7 @@ docker exec cdn-golang go tool cover -html=coverage.out -o coverage.html
 ## Test Environment
 
 The test container includes:
+
 - ImageMagick (latest version, dynamically managed)
 - Redis for caching and rate limiting tests
 - MinIO for storage tests
@@ -56,4 +60,4 @@ k6 run --vus 50 --duration 5m test/performance/load_test.js
 
 # Run spike test
 k6 run --vus 100 --duration 10s test/performance/spike_test.js
-``` 
+```

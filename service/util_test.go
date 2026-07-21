@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -102,11 +103,11 @@ func TestSanitizeObjectName(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-		{"a*b|c\\d&e", "abcde"},   // dangerous characters stripped
-		{"foo bar", "foo_bar"},    // whitespace -> underscore
-		{"şğıöçü", "sgiocu"},      // turkish characters transliterated
-		{"a   b", "a_b"},          // collapsed underscores
-		{"", "file"},              // empty -> fallback
+		{"a*b|c\\d&e", "abcde"},          // dangerous characters stripped
+		{"foo bar", "foo_bar"},           // whitespace -> underscore
+		{"şğıöçü", "sgiocu"},             // turkish characters transliterated
+		{"a   b", "a_b"},                 // collapsed underscores
+		{"", "file"},                     // empty -> fallback
 		{"__lead.trail__", "lead.trail"}, // trimmed underscores/dots
 	}
 	for _, c := range cases {
@@ -187,5 +188,109 @@ func TestCheckToken(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), serverToken) {
 		t.Fatalf("error leaks the server token: %q", err.Error())
+	}
+}
+
+func TestTokenValid(t *testing.T) {
+	t.Setenv("TOKEN", "the-server-token")
+	if !TokenValid("the-server-token") {
+		t.Error("matching token rejected")
+	}
+	if TokenValid("wrong") {
+		t.Error("mismatched token accepted")
+	}
+	if TokenValid("") {
+		t.Error("empty client token accepted")
+	}
+	if TokenValid("  the-server-token  ") == false {
+		t.Error("token with surrounding whitespace should still match")
+	}
+
+	t.Setenv("TOKEN", "")
+	if TokenValid("") {
+		t.Error("empty server token accepted an empty client token (auth bypass)")
+	}
+}
+
+func TestHasUnsafeObjectKey(t *testing.T) {
+	cases := []struct {
+		key  string
+		want bool
+	}{
+		{"", true},
+		{"   ", true},
+		{"../etc/passwd", true},
+		{"a/../b", true},
+		{"a/b/../../c", true},
+		{"..", true},
+		{"a/b/c.jpg", false},
+		{"folder/image.png", false},
+		{"my..file.jpg", false}, // ".." not as a path segment is fine
+	}
+	for _, c := range cases {
+		if got := HasUnsafeObjectKey(c.key); got != c.want {
+			t.Errorf("HasUnsafeObjectKey(%q) = %v, want %v", c.key, got, c.want)
+		}
+	}
+}
+
+// TestCheckToken_EmptyTokensRejected guards the auth-bypass fix: an empty token
+// on either side must never authenticate, even when both are empty.
+func TestCheckToken_EmptyTokensRejected(t *testing.T) {
+	run := func(serverToken, authHeader string) error {
+		t.Setenv("TOKEN", serverToken)
+		app := fiber.New()
+		var captured error
+		app.Get("/", func(c *fiber.Ctx) error {
+			captured = CheckToken(c)
+			return c.SendString("done")
+		})
+		req := httptest.NewRequest("GET", "/", nil)
+		if authHeader != "" {
+			req.Header.Set("Authorization", authHeader)
+		}
+		if _, err := app.Test(req); err != nil {
+			t.Fatalf("request failed: %v", err)
+		}
+		return captured
+	}
+
+	if err := run("", "Bearer "); err == nil {
+		t.Error("empty server token accepted an empty client token (auth bypass)")
+	}
+	if err := run("real-token", "Bearer "); err == nil {
+		t.Error("empty client token accepted")
+	}
+}
+
+// TestGetWidthAndHeight_Clamp covers the DoS-hardening clamp and the negative
+// value floor (a negative int cast to uint would otherwise wrap huge).
+func TestGetWidthAndHeight_Clamp(t *testing.T) {
+	t.Setenv("MAX_RESIZE_DIMENSION", "4096")
+	app := fiber.New()
+	app.Get("/", func(c *fiber.Ctx) error {
+		_, w, h := GetWidthAndHeight(c, QueryType)
+		c.Set("W", strconv.Itoa(int(w)))
+		c.Set("H", strconv.Itoa(int(h)))
+		return c.SendString("ok")
+	})
+
+	resp, err := app.Test(httptest.NewRequest("GET", "/?width=99999&height=88888", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Header.Get("W") != "4096" || resp.Header.Get("H") != "4096" {
+		t.Fatalf("expected clamp to 4096, got W=%s H=%s", resp.Header.Get("W"), resp.Header.Get("H"))
+	}
+
+	resp2, err := app.Test(httptest.NewRequest("GET", "/?width=-5&height=100", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp2.Header.Get("W") != "0" {
+		t.Fatalf("expected negative width floored to 0, got W=%s", resp2.Header.Get("W"))
+	}
+	if resp2.Header.Get("H") != "100" {
+		t.Fatalf("expected height 100, got H=%s", resp2.Header.Get("H"))
 	}
 }

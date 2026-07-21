@@ -155,6 +155,16 @@ paths:
                   type: boolean
                   description: Whether to upload to AWS S3 as well
                   default: false
+                optimize:
+                  type: boolean
+                  description: >-
+                    When true, store a visually-lossless, size-reduced version
+                    (re-encode + metadata strip + longest side capped at
+                    OPTIMIZE_MAX_DIMENSION, default 2560px). Explicit
+                    width/height take precedence over the cap. Animated GIFs and
+                    non-images pass through untouched. Default false stores the
+                    original bytes unchanged.
+                  default: false
                 height:
                   type: integer
                   description: Target height in pixels
@@ -212,6 +222,14 @@ paths:
                 aws_upload:
                   type: boolean
                   description: Whether to upload to AWS S3 as well
+                  default: false
+                optimize:
+                  type: boolean
+                  description: >-
+                    When true, each uploaded image is stored as a
+                    visually-lossless, size-reduced version (longest side capped
+                    at OPTIMIZE_MAX_DIMENSION). Animated GIFs and non-images pass
+                    through untouched. Default false stores originals unchanged.
                   default: false
                 height:
                   type: integer
@@ -460,6 +478,14 @@ paths:
                 aws_upload:
                   type: boolean
                   description: Whether to upload to AWS S3 as well
+                  default: false
+                optimize:
+                  type: boolean
+                  description: >-
+                    When true, the downloaded image is stored as a
+                    visually-lossless, size-reduced version. Non-images pass
+                    through untouched. Only http/https URLs to public hosts are
+                    allowed (SSRF guard). Default false stores the original.
                   default: false
       responses:
         "200":

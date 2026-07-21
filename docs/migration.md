@@ -15,6 +15,7 @@
    - MinIO bucket structure updated
 
 4. **Required Steps**
+
    ```bash
    # 1. Stop the service
    systemctl stop cdn-service
@@ -32,4 +33,4 @@
 
    # 5. Start service
    systemctl start cdn-service
-   ``` 
+   ```

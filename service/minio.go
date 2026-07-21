@@ -16,13 +16,11 @@ func MinioClient() *minio.Client {
 
 	minioClient, err := minio.New(endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: false,
+		Secure: config.GetEnvAsBoolOrDefault("MINIO_USE_SSL", false),
 	})
 	if err != nil {
 		log.Fatalln("MINIO CLIENT ERROR: ", err)
 	}
-
-	log.Printf("%#v\n", minioClient)
 
 	return minioClient
 }

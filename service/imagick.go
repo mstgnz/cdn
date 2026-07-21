@@ -9,6 +9,8 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"gopkg.in/gographics/imagick.v3/imagick"
+
+	"github.com/mstgnz/cdn/pkg/config"
 )
 
 // https://github.com/gographics/imagick/tree/master/examples
@@ -23,6 +25,41 @@ import (
 
 type ImageService struct {
 	MinioClient *minio.Client
+}
+
+// ApplyImagickResourceLimits sets process-wide ImageMagick resource limits so a
+// decompression bomb or an oversized resize target cannot exhaust host memory,
+// disk or CPU. MagickSetResourceLimit is global despite hanging off a wand.
+// Must be called once after imagick.Initialize(). Defaults are generous enough
+// that no legitimate stored image starts failing; when a limit is exceeded the
+// resize paths already fall back to serving the original bytes.
+//
+// Unit note: the C API takes bytes for MEMORY/MAP/DISK, pixels for AREA and
+// seconds for TIME. We log the effective values so they can be eyeballed on the
+// first boot.
+func ApplyImagickResourceLimits() {
+	mw := imagick.NewMagickWand()
+	defer mw.Destroy()
+
+	limits := []struct {
+		name  string
+		rtype imagick.ResourceType
+		value int64
+	}{
+		{"memory", imagick.RESOURCE_MEMORY, int64(config.GetEnvAsIntOrDefault("IMAGICK_MEMORY_LIMIT_MB", 512)) * 1024 * 1024},
+		{"map", imagick.RESOURCE_MAP, int64(config.GetEnvAsIntOrDefault("IMAGICK_MAP_LIMIT_MB", 1024)) * 1024 * 1024},
+		{"area", imagick.RESOURCE_AREA, int64(config.GetEnvAsIntOrDefault("IMAGICK_AREA_LIMIT_MP", 256)) * 1000 * 1000},
+		{"disk", imagick.RESOURCE_DISK, int64(config.GetEnvAsIntOrDefault("IMAGICK_DISK_LIMIT_MB", 2048)) * 1024 * 1024},
+		{"time", imagick.RESOURCE_TIME, int64(config.GetEnvAsIntOrDefault("IMAGICK_TIME_LIMIT_SEC", 60))},
+	}
+
+	for _, l := range limits {
+		if err := mw.SetResourceLimit(l.rtype, l.value); err != nil {
+			log.Printf("Warning: failed to set ImageMagick %s limit: %v", l.name, err)
+			continue
+		}
+		log.Printf("ImageMagick %s limit set: requested=%d effective=%d", l.name, l.value, imagick.GetResourceLimit(l.rtype))
+	}
 }
 
 func (s *ImageService) ImagickGetWidthHeight(image []byte) (error, uint, uint) {
@@ -143,67 +180,121 @@ func (s *ImageService) IsResizable(data []byte) bool {
 	}
 }
 
-// ProcessImage processes an image (resize, optimize, etc.)
-func (s *ImageService) ProcessImage(data []byte) ([]byte, error) {
+// OptimizeOptions controls a single-pass re-encode used to shrink an uploaded
+// image without visible quality loss.
+type OptimizeOptions struct {
+	MaxDimension uint // cap on the longest side; 0 = no cap
+	TargetWidth  uint // explicit dimensions; when either is set they override MaxDimension
+	TargetHeight uint
+	JPEGQuality  uint
+	PNGQuality   uint // lossless: ImageMagick maps PNG "quality" to zlib level/filter
+	WebPQuality  uint
+	Strip        bool // remove metadata (EXIF/ICC/etc.)
+}
+
+// DefaultOptimizeOptions builds the opt-in upload optimization options from the
+// OPTIMIZE_* environment variables, falling back to visually-lossless defaults.
+func DefaultOptimizeOptions() OptimizeOptions {
+	return OptimizeOptions{
+		MaxDimension: uint(config.GetEnvAsIntOrDefault("OPTIMIZE_MAX_DIMENSION", 2560)),
+		JPEGQuality:  uint(config.GetEnvAsIntOrDefault("OPTIMIZE_JPEG_QUALITY", 85)),
+		PNGQuality:   uint(config.GetEnvAsIntOrDefault("OPTIMIZE_PNG_QUALITY", 95)),
+		WebPQuality:  uint(config.GetEnvAsIntOrDefault("OPTIMIZE_WEBP_QUALITY", 85)),
+		Strip:        true,
+	}
+}
+
+// OptimizeImage re-encodes a resizable raster image in a single decode/encode
+// pass: optional downscale (explicit target dims win over MaxDimension),
+// metadata strip, and per-format quality. It returns the encoded bytes and the
+// final dimensions.
+//
+// Inputs that are not resizable rasters (per IsResizable) and animated-capable
+// GIFs are returned unchanged with a nil error, so callers can treat any
+// success as "safe to store". GIF is passed through because a single-frame
+// resize would flatten animations.
+func (s *ImageService) OptimizeImage(data []byte, opts OptimizeOptions) ([]byte, uint, uint, error) {
+	if !s.IsResizable(data) {
+		return data, 0, 0, nil
+	}
+
 	mw := imagick.NewMagickWand()
 	defer mw.Destroy()
 
-	// Read the image data
 	if err := mw.ReadImageBlob(data); err != nil {
-		return nil, fmt.Errorf("failed to read image data: %w", err)
+		return nil, 0, 0, fmt.Errorf("failed to read image data: %w", err)
 	}
 
-	// Get original dimensions
-	width := mw.GetImageWidth()
-	height := mw.GetImageHeight()
+	// Preserve animated GIFs untouched.
+	if mw.GetImageFormat() == "GIF" {
+		return data, mw.GetImageWidth(), mw.GetImageHeight(), nil
+	}
 
-	// Calculate new dimensions (max 2000x2000)
-	maxDim := uint(2000)
-	if width > maxDim || height > maxDim {
-		aspect := float64(width) / float64(height)
-		if width > height {
-			width = maxDim
-			height = uint(float64(maxDim) / aspect)
+	origWidth := mw.GetImageWidth()
+	origHeight := mw.GetImageHeight()
+	newWidth, newHeight := origWidth, origHeight
+
+	switch {
+	case opts.TargetWidth > 0 || opts.TargetHeight > 0:
+		newWidth, newHeight = s.calculateDimensions(origWidth, origHeight, opts.TargetWidth, opts.TargetHeight)
+	case opts.MaxDimension > 0 && (origWidth > opts.MaxDimension || origHeight > opts.MaxDimension):
+		aspect := float64(origWidth) / float64(origHeight)
+		if origWidth >= origHeight {
+			newWidth = opts.MaxDimension
+			newHeight = uint(float64(opts.MaxDimension) / aspect)
 		} else {
-			height = maxDim
-			width = uint(float64(maxDim) * aspect)
-		}
-
-		// Resize the image
-		if err := mw.ResizeImage(width, height, imagick.FILTER_LANCZOS); err != nil {
-			return nil, fmt.Errorf("failed to resize image: %w", err)
+			newHeight = opts.MaxDimension
+			newWidth = uint(float64(opts.MaxDimension) * aspect)
 		}
 	}
 
-	// Strip metadata
-	if err := mw.StripImage(); err != nil {
-		log.Printf("Warning: Failed to strip image metadata: %v", err)
+	if newWidth != origWidth || newHeight != origHeight {
+		if err := mw.ResizeImage(newWidth, newHeight, imagick.FILTER_LANCZOS); err != nil {
+			return nil, 0, 0, fmt.Errorf("failed to resize image: %w", err)
+		}
 	}
 
-	// Optimize quality based on format
-	format := mw.GetImageFormat()
-	switch format {
+	if opts.Strip {
+		if err := mw.StripImage(); err != nil {
+			log.Printf("Warning: Failed to strip image metadata: %v", err)
+		}
+	}
+
+	quality := uint(0)
+	switch mw.GetImageFormat() {
 	case "JPEG":
-		if err := mw.SetImageCompressionQuality(85); err != nil {
-			log.Printf("Warning: Failed to set JPEG quality: %v", err)
-		}
+		quality = opts.JPEGQuality
 	case "PNG":
-		if err := mw.SetImageCompressionQuality(95); err != nil {
-			log.Printf("Warning: Failed to set PNG quality: %v", err)
-		}
+		quality = opts.PNGQuality
 	case "WEBP":
-		if err := mw.SetImageCompressionQuality(80); err != nil {
-			log.Printf("Warning: Failed to set WebP quality: %v", err)
+		quality = opts.WebPQuality
+	}
+	if quality > 0 {
+		if err := mw.SetImageCompressionQuality(quality); err != nil {
+			log.Printf("Warning: Failed to set compression quality: %v", err)
 		}
 	}
 
-	// Get the processed image data
 	processed := mw.GetImageBlob()
 	if len(processed) == 0 {
-		return nil, fmt.Errorf("failed to get processed image data")
+		return nil, 0, 0, fmt.Errorf("failed to get processed image data")
 	}
 
-	return processed, nil
+	return processed, mw.GetImageWidth(), mw.GetImageHeight(), nil
+}
+
+// ProcessImage processes an image (resize, optimize, etc.). Retained for
+// backward compatibility; it is a thin wrapper over OptimizeImage with the
+// original caps and per-format quality values.
+func (s *ImageService) ProcessImage(data []byte) ([]byte, error) {
+	out, _, _, err := s.OptimizeImage(data, OptimizeOptions{
+		MaxDimension: 2000,
+		JPEGQuality:  85,
+		PNGQuality:   95,
+		WebPQuality:  80,
+		Strip:        true,
+	})
+	return out, err
 }
 
 // ResizeImage resizes an image to the specified dimensions

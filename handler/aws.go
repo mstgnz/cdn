@@ -1,16 +1,38 @@
 package handler
 
 import (
+	"fmt"
 	"io"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/mstgnz/cdn/pkg/worker"
 	"github.com/mstgnz/cdn/service"
 )
+
+const glacierDownloadBase = "/tmp/glacier_downloads"
+
+// resolveLocalDownloadPath joins a user-supplied target path under base and
+// guarantees the result stays inside base, defeating path traversal
+// (e.g. "../../app/.env" resolving to an arbitrary file the process can write).
+func resolveLocalDownloadPath(base, target string) (string, error) {
+	if target == "" || filepath.IsAbs(target) {
+		return "", fmt.Errorf("invalid target path")
+	}
+	// Clean("/"+target) collapses any ".." segments relative to a virtual root
+	// before we join, so no traversal can escape base.
+	p := filepath.Join(base, filepath.Clean("/"+target))
+	if p != base && !strings.HasPrefix(p, base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid target path")
+	}
+	return p, nil
+}
 
 type AwsHandler interface {
 	GlacierVaultList(c *fiber.Ctx) error
@@ -97,10 +119,13 @@ func (a *awsHandler) GlacierInitiateRetrieval(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
 	}
+	if result == nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, "empty retrieval result", nil)
+	}
 
 	return service.Response(c, fiber.StatusOK, true, "retrieval job initiated", map[string]any{
-		"jobId":         *result.JobId,
-		"location":      *result.Location,
+		"jobId":         aws.ToString(result.JobId),
+		"location":      aws.ToString(result.Location),
 		"type":          retrievalType,
 		"message":       "Retrieval job started. Check status with job ID.",
 		"estimatedTime": getEstimatedTime(retrievalType),
@@ -137,11 +162,14 @@ func (a *awsHandler) GlacierDownloadArchive(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
 	}
+	if jobStatus == nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, "empty job status", nil)
+	}
 
 	if !jobStatus.Completed {
 		return service.Response(c, fiber.StatusAccepted, false, "job not completed yet", map[string]any{
 			"status":        jobStatus.StatusCode,
-			"statusMessage": *jobStatus.StatusMessage,
+			"statusMessage": aws.ToString(jobStatus.StatusMessage),
 			"completed":     jobStatus.Completed,
 		})
 	}
@@ -151,6 +179,10 @@ func (a *awsHandler) GlacierDownloadArchive(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
 	}
+	if result == nil || result.Body == nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, "empty job output", nil)
+	}
+	defer result.Body.Close()
 
 	// Stream the file to client
 	c.Set("Content-Type", "application/octet-stream")
@@ -178,23 +210,26 @@ func (a *awsHandler) GlacierJobStatus(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
 	}
+	if result == nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, "empty job status", nil)
+	}
 
 	status := map[string]any{
-		"jobId":          *result.JobId,
+		"jobId":          aws.ToString(result.JobId),
 		"jobDescription": result.JobDescription,
 		"action":         result.Action,
 		"statusCode":     result.StatusCode,
-		"statusMessage":  *result.StatusMessage,
+		"statusMessage":  aws.ToString(result.StatusMessage),
 		"completed":      result.Completed,
-		"creationDate":   *result.CreationDate,
+		"creationDate":   aws.ToString(result.CreationDate),
 	}
 
 	if result.CompletionDate != nil {
-		status["completionDate"] = *result.CompletionDate
+		status["completionDate"] = aws.ToString(result.CompletionDate)
 	}
 
 	if result.ArchiveSizeInBytes != nil {
-		status["archiveSizeInBytes"] = *result.ArchiveSizeInBytes
+		status["archiveSizeInBytes"] = aws.ToInt64(result.ArchiveSizeInBytes)
 	}
 
 	return service.Response(c, fiber.StatusOK, true, "job status", status)
@@ -212,10 +247,13 @@ func (a *awsHandler) GlacierInventoryRetrieval(c *fiber.Ctx) error {
 	if err != nil {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
 	}
+	if result == nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, "empty inventory result", nil)
+	}
 
 	return service.Response(c, fiber.StatusOK, true, "inventory retrieval job initiated", map[string]any{
-		"jobId":         *result.JobId,
-		"location":      *result.Location,
+		"jobId":         aws.ToString(result.JobId),
+		"location":      aws.ToString(result.Location),
 		"message":       "Inventory retrieval job started. This will list all archives in the vault.",
 		"estimatedTime": "3-5 hours",
 	})
@@ -251,10 +289,24 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "target bucket is required for MinIO downloads", nil)
 	}
 
+	// Resolve and validate the local destination up front so a traversal
+	// attempt is rejected with 400 instead of failing inside the worker.
+	var localPath string
+	if req.Type == "local" {
+		resolved, resolveErr := resolveLocalDownloadPath(glacierDownloadBase, req.TargetPath)
+		if resolveErr != nil {
+			return service.Response(c, fiber.StatusBadRequest, false, resolveErr.Error(), nil)
+		}
+		localPath = resolved
+	}
+
 	// Check if Glacier job is completed first
 	jobStatus, err := a.awsService.GlacierDescribeJob(vaultName, jobId)
 	if err != nil {
 		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
+	}
+	if jobStatus == nil {
+		return service.Response(c, fiber.StatusInternalServerError, false, "empty job status", nil)
 	}
 
 	if !jobStatus.Completed {
@@ -277,8 +329,15 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 		DownloadType: req.Type,
 	}
 
-	// Store job
+	// Store job, first pruning finished jobs past the retention window so the
+	// in-memory map cannot grow unbounded.
 	a.jobsMu.Lock()
+	cutoff := time.Now().Add(-1 * time.Hour)
+	for id, j := range a.downloadJobs {
+		if j.EndTime != nil && j.EndTime.Before(cutoff) {
+			delete(a.downloadJobs, id)
+		}
+	}
 	a.downloadJobs[downloadJobID] = downloadJob
 	a.jobsMu.Unlock()
 
@@ -287,20 +346,28 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 	workerJob := worker.Job{
 		ID: downloadJobID,
 		Task: func() error {
-			// Update status
+			// Mutations to the shared job struct are guarded by jobsMu because
+			// the status endpoint reads the same struct concurrently.
+			a.jobsMu.Lock()
 			downloadJob.Status = "processing"
+			a.jobsMu.Unlock()
 
 			var err error
 			if req.Type == "minio" {
 				err = a.awsService.GlacierDownloadToMinio(vaultName, jobId, req.TargetBucket, req.TargetPath)
 			} else {
-				// Ensure local path directory exists
-				localPath := filepath.Join("/tmp/glacier_downloads", req.TargetPath)
-				err = a.awsService.GlacierDownloadToLocal(vaultName, jobId, localPath)
+				// Ensure the (already validated) local path's directory exists;
+				// os.Create fails on a missing parent directory otherwise.
+				if mkErr := os.MkdirAll(filepath.Dir(localPath), 0o750); mkErr != nil {
+					err = mkErr
+				} else {
+					err = a.awsService.GlacierDownloadToLocal(vaultName, jobId, localPath)
+				}
 			}
 
 			// Update job status
 			now := time.Now()
+			a.jobsMu.Lock()
 			downloadJob.EndTime = &now
 			if err != nil {
 				downloadJob.Status = "failed"
@@ -308,6 +375,7 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 			} else {
 				downloadJob.Status = "completed"
 			}
+			a.jobsMu.Unlock()
 
 			return err
 		},
@@ -334,14 +402,20 @@ func (a *awsHandler) GlacierCheckDownloadStatus(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "download job ID is required", nil)
 	}
 
+	// Copy the job under the lock so the response serialization does not race
+	// with the worker goroutine mutating the same struct.
 	a.jobsMu.RLock()
-	downloadJob, exists := a.downloadJobs[downloadJobID]
+	job, exists := a.downloadJobs[downloadJobID]
+	var snapshot DownloadJob
+	if exists {
+		snapshot = *job
+	}
 	a.jobsMu.RUnlock()
 	if !exists {
 		return service.Response(c, fiber.StatusNotFound, false, "download job not found", nil)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "download job status", downloadJob)
+	return service.Response(c, fiber.StatusOK, true, "download job status", snapshot)
 }
 
 // Helper function to estimate completion time based on retrieval type

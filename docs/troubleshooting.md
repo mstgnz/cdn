@@ -4,7 +4,7 @@
 
 1. **MinIO Connection Issues**
    - Error: "Unable to connect to MinIO server"
-   - Solution: 
+   - Solution:
      - Ensure MinIO service is running
      - Check MinIO connection details in `.env` file
      - Verify firewall settings
@@ -33,4 +33,4 @@
 
 - Error logs: `/var/log/cdn-service/error.log`
 - Application logs: `/var/log/cdn-service/app.log`
-- Metrics: Available via `/metrics` endpoint for Prometheus 
+- Metrics: Available via `/metrics` endpoint for Prometheus

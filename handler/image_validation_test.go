@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http/httptest"
@@ -113,6 +114,49 @@ func TestUploadWithUrl_InvalidBody_BadRequest(t *testing.T) {
 	}
 	if resp.StatusCode != fiber.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 on invalid body", resp.StatusCode)
+	}
+}
+
+// TestUploadWithUrl_PrivateURL_BadRequest guards the SSRF fix: a private/
+// loopback target must be rejected with 400 before any network or MinIO call.
+func TestUploadWithUrl_PrivateURL_BadRequest(t *testing.T) {
+	app := newImageApp()
+	body := []byte(`{"bucket":"b","url":"http://127.0.0.1:9/x.png"}`)
+	req := httptest.NewRequest("POST", "/upload-url", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 on private URL", resp.StatusCode)
+	}
+}
+
+// TestBatchDelete_TooManyFiles_BadRequest guards the batch-size cap: a request
+// over MAX_BATCH_FILES is rejected before any storage call (nil MinIO here).
+func TestBatchDelete_TooManyFiles_BadRequest(t *testing.T) {
+	t.Setenv("MAX_BATCH_FILES", "100")
+	app := newImageApp()
+
+	files := make([]string, 101)
+	for i := range files {
+		files[i] = "f.jpg"
+	}
+	body, err := json.Marshal(map[string]any{"bucket": "b", "files": files})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("DELETE", "/batch/delete", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := app.Test(req, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != fiber.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 on oversized batch", resp.StatusCode)
 	}
 }
 
