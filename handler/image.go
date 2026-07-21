@@ -289,12 +289,16 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!", nil)
 	}
 
-	// Check to see if the bucket already exists
+	// Check to see if the bucket already exists. BucketExists returns
+	// (false, nil) for a genuinely missing bucket, so create when !exists (the
+	// previous `err != nil && !exists` never created a missing bucket and the
+	// later PutObject failed with "bucket does not exist").
 	exists, err := i.minioClient.BucketExists(ctx, bucket)
-	if err != nil && !exists {
-		// Bucket not found, so create a new one
-		err = i.minioClient.MakeBucket(ctx, bucket, minio.MakeBucketOptions{})
-		if err != nil {
+	if err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, "bucket check failed: "+err.Error(), nil)
+	}
+	if !exists {
+		if err := i.minioClient.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
 			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
 		}
 	}
@@ -482,12 +486,14 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
-	// Check to see if already exist bucket
+	// Check to see if the bucket already exists (create when genuinely missing;
+	// BucketExists returns (false, nil) in that case).
 	exists, err := i.minioClient.BucketExists(ctx, req.Bucket)
-	if err != nil && !exists {
-		// Bucket not found so Make a new bucket
-		err = i.minioClient.MakeBucket(ctx, req.Bucket, minio.MakeBucketOptions{})
-		if err != nil {
+	if err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, "bucket check failed: "+err.Error(), nil)
+	}
+	if !exists {
+		if err := i.minioClient.MakeBucket(ctx, req.Bucket, minio.MakeBucketOptions{}); err != nil {
 			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
 		}
 	}
