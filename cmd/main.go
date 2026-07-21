@@ -246,6 +246,13 @@ func main() {
 		app.Get("/:bucket/*", imageHandler.GetImage)
 	}
 
+	// Batch delete must be registered BEFORE the /:bucket/* wildcard below,
+	// otherwise the wildcard matches "DELETE /batch/delete" (bucket="batch",
+	// *="delete") and shadows it, routing to DeleteImage instead of BatchDelete.
+	if !disableUpload {
+		app.Delete("/batch/delete", AuthMiddleware, imageHandler.BatchDelete)
+	}
+
 	if !disableDelete {
 		app.Delete("/:bucket/*", AuthMiddleware, imageHandler.DeleteImage)
 	}
@@ -257,7 +264,6 @@ func main() {
 		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
 		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadWithUrl)
 		uploadGroup.Post("/batch/upload", AuthMiddleware, imageHandler.BatchUpload)
-		uploadGroup.Delete("/batch/delete", AuthMiddleware, imageHandler.BatchDelete)
 	}
 
 	// Index
