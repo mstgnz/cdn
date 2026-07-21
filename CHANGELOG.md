@@ -2,8 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.7.0] - 2026-07-21
+
+> Releases 1.4.0 through 1.6.x are not itemized here; see the GitHub Releases
+> page for their notes.
+
 ### Changed / Hardening
+
 - **Runtime robustness:** global panic-recover middleware (any handler panic → 500, no process crash); fixed a nil-index panic on uploads without a Content-Type part; hardened all Glacier AWS-SDK pointer derefs (`aws.ToString`/`aws.ToInt64` + nil guards) and added a nil `Body` guard + close (also fixes a reader leak); fixed a data race on async Glacier job state and bounded the in-memory job map.
 - **Uploads:** a file with an image extension must now be a valid image (raster decoded via ImageMagick, SVG validated structurally); non-image files pass through unchanged. Honors `VALIDATE_FILE`.
 - **Monitoring auth:** `/metrics` now requires a Bearer token; `/ws` requires a `token` query parameter (previously both were open).
@@ -12,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - **DoS limits:** batch endpoints capped at `MAX_BATCH_FILES` (default 100); per-connection header buffer bounded via `READ_BUFFER_SIZE_KB` (default 1 MB, was 24 MB); GET/DELETE reject `..` path segments in object keys.
 
 ### Added
+
 - Opt-in upload optimization: `optimize=true` on `/upload`, `/batch/upload` and
   `/upload-url` stores a visually-lossless, size-reduced image (re-encode +
   metadata strip + longest-side cap `OPTIMIZE_MAX_DIMENSION`, default 2560px).
@@ -23,6 +29,7 @@ All notable changes to this project will be documented in this file.
   bound decode cost and defend against decompression bombs.
 
 ### Security
+
 - **Auth bypass fixed (breaking):** the server now fails fast on boot when
   `TOKEN` is empty, and token comparison is constant-time. Previously an empty
   server token let an empty client token pass authentication.
@@ -41,7 +48,9 @@ All notable changes to this project will be documented in this file.
   neutralize stored-XSS via SVG.
 
 ## [1.3.0] - 2024-01-15
+
 ### Added
+
 - Secure file validation using magic bytes for enhanced security
 - Improved image processing with optimized resize operations
 - Redis cache integration for better performance
@@ -68,6 +77,7 @@ All notable changes to this project will be documented in this file.
 - Batch operations for multiple file uploads/deletions
 
 ### Changed
+
 - Refactored image processing service for better reliability
 - Enhanced error handling with detailed messages
 - Updated logging system with structured logs
@@ -77,6 +87,7 @@ All notable changes to this project will be documented in this file.
 - Standardized response format for batch operations
 
 ### Fixed
+
 - Memory leak in image processing operations
 - Concurrent upload handling issues
 - Cache invalidation race conditions
@@ -85,7 +96,9 @@ All notable changes to this project will be documented in this file.
 - AWS upload parameter handling
 
 ## [1.2.0] - 2023-12-01
+
 ### Added
+
 - Basic image processing capabilities
 - MinIO storage integration
 - Simple caching mechanism
@@ -93,16 +106,20 @@ All notable changes to this project will be documented in this file.
 - Initial API endpoints
 
 ### Changed
+
 - Improved file upload process
 - Enhanced storage handling
 - Basic performance optimizations
 
 ## [1.1.0] - 2023-09-15
+
 ### Added
+
 - Initial MinIO integration
 - Basic file upload/download
 - Simple authentication
 
 ## [1.0.0] - 2023-06-15
+
 - Initial release
 - Basic CDN functionality

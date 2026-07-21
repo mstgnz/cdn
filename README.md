@@ -174,7 +174,7 @@ UPLOAD_URL_ALLOW_PRIVATE=false
 
 ```bash
 curl -X POST http://localhost:9090/upload \
-  -H "Authorization: your-token" \
+  -H "Authorization: Bearer your-token" \
   -F "file=@image.jpg" \
   -F "bucket=your-bucket" \
   -F "path=your/path"
@@ -191,7 +191,7 @@ cap. The same `optimize` flag works on `/batch/upload` (form field) and
 
 ```bash
 curl -X POST http://localhost:9090/upload \
-  -H "Authorization: your-token" \
+  -H "Authorization: Bearer your-token" \
   -F "file=@photo.jpg" \
   -F "bucket=your-bucket" \
   -F "optimize=true"
@@ -217,7 +217,7 @@ http://localhost:9090/your-bucket/w:300/h:200/image.jpg
 
 ```bash
 curl -X DELETE http://localhost:9090/your-bucket/image.jpg \
-  -H "Authorization: your-token"
+  -H "Authorization: Bearer your-token"
 ```
 
 #### Bucket Operations
@@ -226,14 +226,14 @@ curl -X DELETE http://localhost:9090/your-bucket/image.jpg \
 
 ```bash
 curl http://localhost:9090/minio/bucket-list \
-  -H "Authorization: your-token"
+  -H "Authorization: Bearer your-token"
 ```
 
 2. Create bucket:
 
 ```bash
 curl http://localhost:9090/minio/your-bucket/create \
-  -H "Authorization: your-token"
+  -H "Authorization: Bearer your-token"
 ```
 
 ### Monitoring
@@ -241,7 +241,8 @@ curl http://localhost:9090/minio/your-bucket/create \
 1. Connect to WebSocket for real-time updates:
 
 ```javascript
-const ws = new WebSocket("ws://localhost:9090/ws");
+// /ws requires the token as a query parameter (browsers cannot set headers)
+const ws = new WebSocket("ws://localhost:9090/ws?token=your-token");
 ws.onmessage = (event) => {
   const stats = JSON.parse(event.data);
   console.log("System stats:", stats);
@@ -267,7 +268,7 @@ ws.onmessage = (event) => {
 2. Get current monitoring stats:
 
 ```bash
-curl -H "Authorization: your-token" http://localhost:9090/monitor
+curl -H "Authorization: Bearer your-token" http://localhost:9090/monitor
 ```
 
 ## Kubernetes Deployment

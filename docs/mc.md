@@ -163,6 +163,104 @@ mc mirror --overwrite never /local/folder/ myminio/mybucket/
 mc mirror --remove /local/folder/ myminio/mybucket/
 ```
 
+## Server-to-Server Migration (MinIO → MinIO)
+
+Use this when moving one or more buckets from an existing MinIO to a **new MinIO
+on another VM** (e.g. splitting two projects that share one CDN onto separate
+servers). Data streams directly **source → destination**; you do NOT download it
+to local disk and re-upload. `mc mirror` is the right tool here (not `mc cp`): it
+is **resumable** and **incremental**, so re-running it copies only what changed.
+
+Run `mc` on any host that can reach **both** MinIO endpoints (the old server or
+the new VM both work).
+
+### 1. Configure both servers as aliases
+
+```bash
+mc alias set src http://OLD_MINIO_HOST:9000 ACCESS_KEY SECRET_KEY
+mc alias set dst http://NEW_MINIO_HOST:9000 ACCESS_KEY SECRET_KEY
+```
+
+### 2. Identify which buckets to move
+
+```bash
+mc ls src                                        # list all buckets
+mc du src/project-bucket                          # total size to migrate
+mc ls --recursive --summarize src/project-bucket  # object count + size
+```
+
+### 3. Create the target bucket and match its policy
+
+```bash
+mc mb dst/project-bucket
+
+# If the source bucket is publicly readable, replicate the policy:
+mc anonymous get src/project-bucket
+# e.g. mc anonymous set download dst/project-bucket
+```
+
+### 4. Dry run, then start the real sync in the background
+
+```bash
+# Preview what would be copied (makes no changes)
+mc mirror --dry-run src/project-bucket dst/project-bucket | head
+
+# Real transfer. Run inside tmux/screen (or nohup) so it survives an SSH
+# disconnect — a multi-TB sync takes a long time.
+nohup mc mirror --preserve src/project-bucket dst/project-bucket > mirror.log 2>&1 &
+tail -f mirror.log
+```
+
+- `--preserve` keeps object metadata/attributes.
+- `mc mirror` is resumable: if it is interrupted, run the same command again and
+  it copies only the missing/changed objects.
+
+### 5. Catch up deltas while the source stays live
+
+Re-run the same mirror as many times as needed; each pass only transfers objects
+added or changed since the previous pass:
+
+```bash
+mc mirror --preserve src/project-bucket dst/project-bucket
+```
+
+### 6. Verify before cutover
+
+```bash
+mc diff src/project-bucket dst/project-bucket    # empty output = fully in sync
+mc du src/project-bucket
+mc du dst/project-bucket                           # sizes should match
+```
+
+`mc diff` lists objects that are missing on the destination or differ in size.
+
+### 7. Cut over
+
+1. Point the migrated project's app/config to the new MinIO endpoint
+   (`MINIO_ENDPOINT` + credentials).
+2. Run one final `mc mirror` to pick up anything written during the switch. For
+   a zero-gap window you can keep a continuous sync running during cutover:
+   ```bash
+   mc mirror --watch --preserve src/project-bucket dst/project-bucket
+   ```
+3. Smoke-test a few objects on the new server (GET/serve them), then send live
+   traffic to it.
+
+### 8. Decommission the old copy (only after verifying)
+
+```bash
+mc rm --recursive --force src/project-bucket      # or keep it until confident
+```
+
+### Notes
+
+- Repeat per bucket if the project spans several buckets.
+- Bandwidth-throttling flags (to avoid saturating the link) vary by `mc`
+  version — check `mc mirror --help` for `--limit-upload` / `--limit-download`.
+- If the source bucket has **versioning** enabled, `mc mirror` moves only the
+  current object versions; migrating full version history is a separate task
+  (bucket replication) — plan it separately.
+
 ## File Information and Search
 
 ### File Information (stat)
@@ -398,17 +496,18 @@ sudo journalctl -u minio-transfer.service -f
 
 ### Advanced Transfer Options for Large Files
 
-#### Parallel and Optimized Transfers
+> **Note:** the exact flags below vary by `mc` version — verify with
+> `mc cp --help` / `mc mirror --help` before relying on them. For whole
+> buckets/folders (and for anything resumable), prefer `mc mirror` over `mc cp`;
+> see [Server-to-Server Migration](#server-to-server-migration-minio--minio).
+> `mc mirror` is resumable and incremental by design, so it is the correct tool
+> for multi-TB folder/bucket transfers.
+
+#### Bandwidth-limited transfer
 
 ```bash
-# Multiple parallel connections
-nohup mc cp --parallel 8 --progress /large/file.zip myremote/mybucket/ > transfer.log 2>&1 &
-
-# With bandwidth limit to avoid overwhelming network
-nohup mc cp --limit-upload 100MB --progress /large/file.zip myremote/mybucket/ > transfer.log 2>&1 &
-
-# Resume incomplete transfers (if supported)
-nohup mc cp --continue --progress /large/file.zip myremote/mybucket/ > transfer.log 2>&1 &
+# Limit bandwidth to avoid saturating the link (flag name depends on mc version)
+nohup mc mirror --limit-upload 100Mi --preserve /large/dataset/ myremote/mybucket/ > transfer.log 2>&1 &
 ```
 
 #### Monitor Transfer Progress

@@ -2,33 +2,43 @@
 
 ## Prerequisites
 
-The project requires ImageMagick for image processing operations. To ensure a consistent test environment, we recommend running tests inside Docker containers.
+The project uses cgo bindings to ImageMagick, so `go test` needs cgo +
+ImageMagick + pkg-config. Tests that need infrastructure (MinIO/Redis/AWS) skip
+cleanly when it is absent; start MinIO/Redis first to exercise them:
+
+```bash
+docker compose up -d minio redis
+```
+
+On macOS the build needs these environment variables (adjust paths to your
+install):
+
+```bash
+export PKG_CONFIG_PATH="/opt/homebrew/opt/imagemagick/lib/pkgconfig"
+export CGO_ENABLED=1
+export CGO_CFLAGS_ALLOW='-Xpreprocessor'
+```
 
 ## Running Tests
 
-1. Build and start the containers:
-
-```bash
-docker-compose up -d
-```
-
-2. Run tests inside the container:
-
 ```bash
 # Run all tests
-docker exec cdn-golang go test ./... -v
+go test ./... -v
 
 # Run specific package tests
-docker exec cdn-golang go test ./pkg/worker -v
-docker exec cdn-golang go test ./service -v
-docker exec cdn-golang go test ./handler -v
+go test ./pkg/worker -v
+go test ./service -v
+go test ./handler -v
+
+# Race detector (recommended for the concurrent paths)
+go test -race ./handler/... ./service/...
 ```
 
-3. Run tests with coverage:
+Run with coverage:
 
 ```bash
-docker exec cdn-golang go test ./... -coverprofile=coverage.out
-docker exec cdn-golang go tool cover -html=coverage.out -o coverage.html
+go test ./... -coverprofile=coverage.out
+go tool cover -html=coverage.out -o coverage.html
 ```
 
 ## Test Environment

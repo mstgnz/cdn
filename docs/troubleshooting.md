@@ -12,8 +12,9 @@
 2. **File Upload Issues**
    - Error: "File size exceeds limit"
    - Solution:
-     - Check `BodyLimit` setting (default: 25MB)
-     - If using Nginx, verify `client_max_body_size` setting
+     - The Fiber `BodyLimit` is 100MB (matches nginx `client_max_body_size 100M`)
+     - Per-file validation cap is `MAX_FILE_SIZE` (default 100MB)
+     - If using Nginx, verify `client_max_body_size` matches
 
 3. **Image Processing Issues**
    - Error: "Image processing failed"
@@ -31,6 +32,7 @@
 
 ## Logging and Monitoring
 
-- Error logs: `/var/log/cdn-service/error.log`
-- Application logs: `/var/log/cdn-service/app.log`
-- Metrics: Available via `/metrics` endpoint for Prometheus
+- Logs go to stdout (structured JSON via zerolog); there are no on-disk log
+  files. In Docker, read them with `docker compose logs -f api`.
+- Metrics: available via the `/metrics` endpoint for Prometheus. As of v1.7.0
+  this endpoint requires a Bearer token (`Authorization: Bearer <TOKEN>`).

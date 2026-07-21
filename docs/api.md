@@ -18,8 +18,8 @@ The server requires a non-empty `TOKEN` environment variable and refuses to boot
 
 ## Rate Limits
 
-- Global: 100 requests per minute per IP
-- Upload endpoints: 10 requests per minute per IP
+- Global: 100 requests per minute per IP (`RATE_LIMIT`)
+- Upload endpoints: 50 requests per minute per IP (`UPLOAD_RATE_LIMIT`)
 - Rate limit bypass protection enabled
 
 ### Rate Limit Headers
@@ -84,14 +84,18 @@ Response:
   "data": {
     "status": "healthy",
     "services": {
-      "minio": "connected",
-      "aws": "connected",
-      "cache": "connected"
+      "minio": "healthy",
+      "aws": "healthy",
+      "cache": "healthy"
     },
     "timestamp": "2024-01-15T10:30:00Z"
   }
 }
 ```
+
+Top-level `status` is `healthy` or `degraded` (503). Each service value is
+`healthy` or `unhealthy: <error>`. AWS is informational only — overall health is
+based on MinIO + cache.
 
 #### Metrics
 
@@ -195,34 +199,35 @@ Headers:
 
 Body:
 
-- `files[]`: Multiple image files (max 10)
+- `files`: Multiple image files (capped at `MAX_BATCH_FILES`, default 100)
 - `bucket`: Target bucket name
 - `path`: Storage path (optional)
 - `aws_upload`: Boolean flag for AWS upload (optional)
 - `optimize`: Boolean; when `true`, each uploaded image is stored size-reduced (visually lossless). Animated GIFs and non-images pass through untouched. Default `false`. (optional)
-- `width`: Target width in pixels (optional)
-- `height`: Target height in pixels (optional)
 
 Response:
 
 ```json
 {
-    "success": true,
-    "message": "Batch upload successful",
-    "data": [
-        {
-            "filename": "image1.jpg",
-            "success": true,
-            "result": {...}
-        },
-        {
-            "filename": "image2.jpg",
-            "success": true,
-            "result": {...}
-        }
-    ]
+  "success": true,
+  "message": "Batch upload completed",
+  "data": [
+    {
+      "filename": "image1.jpg",
+      "success": true,
+      "object_name": "uuid_image1.jpg"
+    },
+    {
+      "filename": "image2.jpg",
+      "success": true,
+      "object_name": "uuid_image2.jpg"
+    }
+  ]
 }
 ```
+
+Each item includes `filename`, `success`, and `object_name`. On failure it
+carries `error` instead; `aws_error` and `size` appear when relevant.
 
 #### Upload from URL
 
@@ -280,7 +285,10 @@ Parameters:
 
 - `bucket`: Bucket name
 - `*`: Image path
-- `aws_delete`: Boolean query parameter for AWS deletion (optional)
+
+> Note: this endpoint deletes from MinIO only. The `aws_delete` flag is not wired
+> on this route, so AWS S3 deletion is not triggered here — use `/batch/delete`
+> (which honors `aws_delete` in its JSON body) for S3 removal.
 
 Response: Standard success response
 
@@ -310,7 +318,7 @@ Response:
 ```json
 {
   "success": true,
-  "message": "Batch deletion successful",
+  "message": "Batch delete completed",
   "data": [
     {
       "filename": "image1.jpg",
@@ -328,6 +336,8 @@ Response:
 
 ### Storage Operations
 
+All `/aws/*` and `/minio/*` routes require authentication (`Authorization: Bearer <token>`).
+
 #### AWS Bucket Operations
 
 ```http
@@ -339,10 +349,10 @@ GET /aws/vault-list
 #### Minio Bucket Operations
 
 ```http
-GET /minio/bucket-list
-GET /minio/:bucket/exists
-GET /minio/:bucket/create
-GET /minio/:bucket/delete
+GET    /minio/bucket-list
+GET    /minio/:bucket/exists
+GET    /minio/:bucket/create
+DELETE /minio/:bucket/delete
 ```
 
 ## Error Codes

@@ -231,12 +231,6 @@ paths:
                     at OPTIMIZE_MAX_DIMENSION). Animated GIFs and non-images pass
                     through untouched. Default false stores originals unchanged.
                   default: false
-                height:
-                  type: integer
-                  description: Target height in pixels
-                width:
-                  type: integer
-                  description: Target width in pixels
       responses:
         "200":
           description: Successful batch upload
@@ -647,17 +641,29 @@ paths:
       summary: WebSocket connection
       description: |
         WebSocket connection for real-time system monitoring.
+        Requires the auth token as a `token` query parameter (WebSocket clients
+        cannot set an Authorization header): `ws://host/ws?token=<TOKEN>`.
         You can monitor the following events:
         - File uploads
         - System metrics
         - Error states
       tags:
         - WebSocket
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          description: Auth token (same value as the Bearer TOKEN)
+          schema:
+            type: string
       responses:
         "101":
           description: WebSocket connection successful
-        "400":
-          description: WebSocket connection failed
+        "401":
+          description: Missing or invalid token
+        "426":
+          description: Upgrade required (not a WebSocket request)
   /minio/bucket-list:
     get:
       summary: List MinIO buckets
@@ -724,7 +730,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
   /minio/{bucket}/delete:
-    get:
+    delete:
       summary: Delete MinIO bucket
       tags:
         - Minio

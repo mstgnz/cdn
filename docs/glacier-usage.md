@@ -35,7 +35,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ```json
 {
-  "status": true,
+  "success": true,
   "message": "retrieval job initiated",
   "data": {
     "jobId": "HkF9p6o7yjhFx-K3CGl6fuSm6VzW9T7esGQfco8nUXVYwS0jlb5gq1JZ55yHgt5vP54ZShjoQzQVVh7vEXAMPLEjobID",
@@ -58,7 +58,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ```json
 {
-  "status": true,
+  "success": true,
   "message": "job status",
   "data": {
     "jobId": "HkF9p6o7yjhFx-K3CGl6fuSm6VzW9T7esGQfco8nUXVYwS0jlb5gq1JZ55yHgt5vP54ZShjoQzQVVh7vEXAMPLEjobID",
@@ -103,7 +103,7 @@ Content-Type: application/json
 
 ```json
 {
-  "status": true,
+  "success": true,
   "message": "async download job started",
   "data": {
     "downloadJobId": "dl-123e4567-e89b-12d3-a456-426614174000",
@@ -141,7 +141,7 @@ Authorization: Bearer YOUR_TOKEN
 
 ```json
 {
-  "status": true,
+  "success": true,
   "message": "download job status",
   "data": {
     "id": "dl-123e4567-e89b-12d3-a456-426614174000",
@@ -322,6 +322,8 @@ Example inventory JSON:
 ```http
 GET /metrics
 ```
+
+Requires a Bearer token (`Authorization: Bearer <TOKEN>`) as of v1.7.0.
 
 Monitor worker pool metrics:
 

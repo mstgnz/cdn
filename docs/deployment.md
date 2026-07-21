@@ -29,12 +29,12 @@ cp .env.example .env
 ```env
 # App
 APP_PORT=9090
-APP_TOKEN=your-secret-token
+TOKEN=your-secret-token        # required; the service refuses to boot if empty
 
 # Minio
 MINIO_ENDPOINT=localhost:9000
-MINIO_ACCESS_KEY=your-access-key
-MINIO_SECRET_KEY=your-secret-key
+MINIO_ROOT_USER=your-access-key
+MINIO_ROOT_PASSWORD=your-secret-key
 MINIO_USE_SSL=false
 
 # AWS (optional)
@@ -42,25 +42,28 @@ AWS_ACCESS_KEY_ID=your-aws-access-key
 AWS_SECRET_ACCESS_KEY=your-aws-secret-key
 AWS_REGION=your-aws-region
 
-# Redis Configuration
+# Redis Configuration (credentials/db go inside the URL, e.g. redis://:pass@host:6379/0)
 REDIS_URL=redis://localhost:6379
-REDIS_PASSWORD=your-redis-password
-REDIS_DB=0
 
 # Rate Limiting
-RATE_LIMIT_REQUESTS=100
-RATE_LIMIT_DURATION=60
+RATE_LIMIT=100            # requests per window
+RATE_LIMIT_DURATION=1     # window length in MINUTES (not seconds)
+UPLOAD_RATE_LIMIT=50      # stricter limit for upload endpoints
 ```
+
+See [`.env.example`](../.env.example) for the complete list of variables and
+their defaults.
 
 ## Test Environment Setup
 
-1. Start test environment:
+1. Start the infrastructure the integration tests need (MinIO/Redis). Tests that
+   require infrastructure skip cleanly when it is absent:
 
 ```bash
-docker-compose -f docker-compose.test.yml up -d
+docker compose up -d minio redis
 ```
 
-2. Run test suite:
+2. Run the test suite (the build uses cgo + ImageMagick):
 
 ```bash
 # All tests
@@ -200,38 +203,38 @@ docker-compose up -d minio
 go mod download
 ```
 
-3. Run the application:
+3. Run the application (requires cgo + ImageMagick + pkg-config; see the README
+   build notes):
 
 ```bash
-go run cmd/main.go
+CGO_ENABLED=1 go run ./cmd/main.go
 ```
 
 ## Docker Deployment
 
+The Dockerfile is named `dockerfile` (lowercase), so pass it explicitly when
+building directly; Compose already references it.
+
 1. Build the image:
 
 ```bash
-docker build -t cdn-service .
+docker build -f dockerfile -t cdn-api .
 ```
 
-2. Run with Docker Compose:
+2. Run with Docker Compose (builds all three API replicas + nginx + MinIO + Redis):
 
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-## Monitoring Setup
+## Monitoring
 
-1. Start Prometheus and Grafana:
-
-```bash
-docker-compose -f docker-compose.monitoring.yml up -d
-```
-
-2. Access monitoring:
-
-- Prometheus: http://localhost:9090
-- Grafana: http://localhost:3001
+The service exposes Prometheus metrics on the app port at `/metrics`
+(`http://localhost:${APP_PORT}/metrics`). As of v1.7.0 this endpoint requires a
+Bearer token, so configure your Prometheus scrape job with
+`authorization.credentials: <TOKEN>`. This repository does not ship a
+Prometheus/Grafana Compose stack; point your existing monitoring at the metrics
+endpoint.
 
 ## Production Deployment
 
@@ -290,16 +293,16 @@ mc mirror minio/bucket backup/bucket
 
 ## Troubleshooting
 
-1. Check logs:
+1. Check logs (the app service is `api`; there is no `cdn-service` container):
 
 ```bash
-docker logs cdn-service
+docker compose logs -f api
 ```
 
-2. Monitor metrics:
+2. Monitor metrics (app port, Bearer token required):
 
 ```bash
-curl http://localhost:3000/metrics
+curl -H "Authorization: Bearer $TOKEN" http://localhost:9090/metrics
 ```
 
 3. Common issues:
