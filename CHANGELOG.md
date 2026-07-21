@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.1] - 2026-07-21
+
+### Fixed
+
+- **Upload to a non-existent bucket now creates it.** `BucketExists` returns
+  `(false, nil)` for a missing bucket, so the previous `err != nil && !exists`
+  guard never created it and the upload failed with "bucket does not exist".
+  Fixed in `/upload` and `/upload-url` (create whenever the bucket is missing).
+- **`DELETE /batch/delete` now reaches `BatchDelete`.** It was shadowed by the
+  `DELETE /:bucket/*` wildcard (matched as bucket="batch", \*="delete") and
+  routed to the single-object delete handler; the route is now registered before
+  the wildcard.
+
 ## [1.7.0] - 2026-07-21
 
 > Releases 1.4.0 through 1.6.x are not itemized here; see the GitHub Releases
