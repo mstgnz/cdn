@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.2] - 2026-07-25
+
+### Security
+
+- **Hardened the ImageMagick attack surface (RCE prevention).** ImageMagick was
+  the only server-side code-execution surface (uploads are stored in MinIO and
+  streamed back, never executed). Three gaps closed:
+  - `POST /resize` was unauthenticated and fed request bytes straight into
+    ImageMagick; it is now behind `AuthMiddleware` like every other write/compute
+    endpoint.
+  - `ResizeImage` now runs the same magic-number content check
+    (`ValidateFileContent`) as the upload endpoints before any decode.
+  - Added a strict ImageMagick `policy.xml` (`docker/policy.xml`, loaded via
+    `MAGICK_CONFIGURE_PATH`) disabling the Ghostscript delegate chain
+    (PS/EPS/PDF/XPS), the ImageTragick coder class
+    (MSL/MVG/MSVG/SVG/MAGICK/SHOW/URL/HTTPS/HTTP/FTP/EPHEMERAL/TEXT), indirect
+    file reads (`path @*`) and all delegates. Raster decode (JPEG/PNG/GIF/WEBP)
+    and SVG upload/serving are unaffected.
+
 ## [1.7.1] - 2026-07-21
 
 ### Fixed

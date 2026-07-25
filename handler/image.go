@@ -666,6 +666,18 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusInternalServerError, false, "Error reading file content", nil)
 	}
 
+	// Magic-number gate before the bytes reach ImageMagick, matching the upload
+	// endpoints. Without it, /resize would decode arbitrary content (a crafted
+	// file with a dangerous ImageMagick coder/delegate) with no content check.
+	if err := validator.ValidateFileContent(fileContent); err != nil {
+		if valErr, ok := err.(*validator.FileValidationError); ok {
+			return service.Response(c, fiber.StatusBadRequest, false, valErr.Message, map[string]string{
+				"code": valErr.Code,
+			})
+		}
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+	}
+
 	if !resize || !service.IsImageFile(file.Filename) {
 		c.Set("Content-Length", strconv.Itoa(len(fileContent)))
 		c.Set("Content-Type", http.DetectContentType(fileContent))

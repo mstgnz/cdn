@@ -229,7 +229,10 @@ func main() {
 	io.Delete("/:bucket/delete", minioHandler.RemoveBucket)
 
 	// resize
-	app.Post("/resize", imageHandler.ResizeImage)
+	// Auth-gated: /resize feeds arbitrary request bytes straight into ImageMagick
+	// (decode + resize), so it must not be an unauthenticated compute/attack
+	// surface like the other write endpoints.
+	app.Post("/resize", AuthMiddleware, imageHandler.ResizeImage)
 
 	// Minio
 	if !disableGet {

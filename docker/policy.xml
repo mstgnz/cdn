@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policymap [
+<!ELEMENT policymap (policy)*>
+<!ATTLIST policymap xmlns CDATA #FIXED ''>
+<!ELEMENT policy EMPTY>
+<!ATTLIST policy xmlns CDATA #FIXED '' domain NMTOKEN #REQUIRED
+  name NMTOKEN #IMPLIED pattern CDATA #IMPLIED rights NMTOKEN #IMPLIED
+  stealth NMTOKEN #IMPLIED value CDATA #IMPLIED>
+]>
+<!--
+  Hardened ImageMagick policy for the CDN service.
+
+  This service only ever decodes/resizes raster images uploaded by clients. It
+  never needs Ghostscript (PS/PDF/EPS), script-like coders (MSL/MVG), or any
+  coder that reaches out over the network or reads indirect files. Disabling
+  them closes the ImageTragick (CVE-2016-3714) and Ghostscript-delegate RCE
+  classes. SVG is stored/served as-is (validated structurally in Go, never
+  rasterized here), so the SVG/MSVG coders are disabled too — a resize attempt
+  on an SVG simply falls back to returning the original bytes.
+
+  Loaded via MAGICK_CONFIGURE_PATH so it applies regardless of the ImageMagick
+  major version (IM6 vs IM7) or install prefix.
+-->
+<policymap>
+  <!-- Resource limits (defense-in-depth; mirrors the Go-side limits). -->
+  <policy domain="resource" name="memory" value="512MiB"/>
+  <policy domain="resource" name="map" value="1GiB"/>
+  <policy domain="resource" name="area" value="256MP"/>
+  <policy domain="resource" name="disk" value="2GiB"/>
+  <policy domain="resource" name="time" value="60"/>
+  <policy domain="resource" name="list-length" value="128"/>
+
+  <!-- Block indirect file reads/writes: @file, path-based smuggling. -->
+  <policy domain="path" rights="none" pattern="@*"/>
+
+  <!-- Ghostscript delegate chain (RCE via crafted PS/PDF/EPS). -->
+  <policy domain="coder" rights="none" pattern="PS"/>
+  <policy domain="coder" rights="none" pattern="PS2"/>
+  <policy domain="coder" rights="none" pattern="PS3"/>
+  <policy domain="coder" rights="none" pattern="EPS"/>
+  <policy domain="coder" rights="none" pattern="PDF"/>
+  <policy domain="coder" rights="none" pattern="XPS"/>
+
+  <!-- Script / indirect / network coders (ImageTragick class). -->
+  <policy domain="coder" rights="none" pattern="MSL"/>
+  <policy domain="coder" rights="none" pattern="MVG"/>
+  <policy domain="coder" rights="none" pattern="MSVG"/>
+  <policy domain="coder" rights="none" pattern="SVG"/>
+  <policy domain="coder" rights="none" pattern="MAGICK"/>
+  <policy domain="coder" rights="none" pattern="SHOW"/>
+  <policy domain="coder" rights="none" pattern="WIN"/>
+  <policy domain="coder" rights="none" pattern="CAPTION"/>
+  <policy domain="coder" rights="none" pattern="LABEL"/>
+  <policy domain="coder" rights="none" pattern="TEXT"/>
+  <policy domain="coder" rights="none" pattern="PANGO"/>
+  <policy domain="coder" rights="none" pattern="URL"/>
+  <policy domain="coder" rights="none" pattern="HTTPS"/>
+  <policy domain="coder" rights="none" pattern="HTTP"/>
+  <policy domain="coder" rights="none" pattern="FTP"/>
+  <policy domain="coder" rights="none" pattern="EPHEMERAL"/>
+
+  <!-- Disable delegates that shell out (belt-and-suspenders with coder blocks). -->
+  <policy domain="delegate" rights="none" pattern="*"/>
+
+  <!-- Lock the policy so a later-loaded policy cannot loosen it. -->
+  <policy domain="system" name="precision" value="6"/>
+</policymap>

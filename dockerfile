@@ -39,6 +39,13 @@ RUN chmod +x /tmp/get_imagemagick_version.sh && \
     rm -rf /var/lib/apt/lists/* && \
     rm -rf /tmp/*
 
+# Install the hardened ImageMagick security policy. MAGICK_CONFIGURE_PATH makes
+# it authoritative regardless of the ImageMagick major version or install prefix
+# (source-built IM7 under /usr/local vs apt IM6 under /etc), closing the
+# Ghostscript-delegate / ImageTragick RCE classes on untrusted uploads.
+COPY docker/policy.xml /etc/ImageMagick/policy.xml
+ENV MAGICK_CONFIGURE_PATH=/etc/ImageMagick
+
 WORKDIR /app
 COPY . .
 RUN go mod download
