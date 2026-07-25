@@ -30,6 +30,17 @@ All notable changes to this project will be documented in this file.
 
 ### Changed / Hardening
 
+- **Rate-limit bypass fixed, and the raw token is out of the Redis keyspace.**
+  `RateLimitKey` built the key as `<ip>:<raw bearer>`, which had two problems.
+  The bearer secret was written verbatim into Redis, and because the key trusted
+  an unverified header, a client sending a different random token on every
+  request got a brand-new counter each time and was never rate limited at all.
+  The key is now derived from the *verified* identity of the credential:
+  `<ip>|general`, `<ip>|bucket:<name>`, or the plain `<ip>` for anything that does
+  not authenticate. A verified credential still gets its own quota, unverified
+  ones now share the per-IP bucket they were always meant to be under, and no
+  token material reaches Redis. Bucket names are validated at load time, so they
+  cannot inject a separator into the key.
 - **Operator endpoints now require the general token.** `AuthMiddleware` was split
   into `GeneralAuthMiddleware` (general token only, applied to `/aws/*`,
   `/minio/*`, `/monitor`, `/metrics`) and `BucketAuthMiddleware` (accepts both
@@ -54,6 +65,9 @@ general token containing a `:` is still matched as a whole string before any
 Auth failures keep returning 400 rather than being corrected to 401, so client
 error handling is unchanged. The only new status code is the 403 for a
 bucket-scoped token reaching outside its bucket.
+
+The rate-limit key format changed, so counters in flight at deploy time are
+orphaned and expire on their own within the rate-limit window. No action needed.
 
 ## [1.7.2] - 2026-07-25
 

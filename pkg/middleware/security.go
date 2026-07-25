@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"crypto/subtle"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/mstgnz/cdn/pkg/config"
+	"github.com/mstgnz/cdn/service"
 )
 
 // SecurityConfig represents security middleware configuration
@@ -197,22 +197,38 @@ func ClientIP(c *fiber.Ctx) string {
 	return c.IP()
 }
 
-// RateLimitKey generates a unique key for rate limiting based on IP and token
+// RateLimitKey derives the rate-limit bucket for a request from the real client
+// IP and the *verified* identity of its credential.
+//
+// Two properties matter here, and the previous "<ip>:<raw bearer>" key had
+// neither:
+//
+//  1. No secret in the keyspace. The key is built from the identity a credential
+//     resolves to (the general token, or a bucket name), never from the
+//     credential itself, so token material never reaches Redis.
+//  2. An unverified credential cannot mint a fresh counter. Because the old key
+//     trusted the raw header, a client sending a different random token on every
+//     request got a brand-new counter each time and was effectively never rate
+//     limited. Anything that does not authenticate now shares the plain per-IP
+//     bucket, which is the limit it was always meant to be under.
+//
+// Bucket names are validated at load time to lowercase letters, digits and '-',
+// so a bucket name can never inject a separator into the key.
+//
+// The rate limiter is mounted before the auth middleware, so resolving here is
+// deliberately read-only: rejecting a bad credential stays the auth middleware's
+// job, this only decides which counter the request belongs to.
 func RateLimitKey(c *fiber.Ctx) string {
-	// Get the real client IP (Cloudflare-aware)
 	ip := ClientIP(c)
 
-	// Get token from header
-	token := c.Get("Authorization")
-	token = strings.TrimPrefix(token, "Bearer ")
-
-	// If no token, use IP only
-	if token == "" {
+	p, err := service.ResolvePrincipal(c)
+	if err != nil {
 		return ip
 	}
-
-	// Combine IP and token for the key
-	return fmt.Sprintf("%s:%s", ip, token)
+	if p.Scoped {
+		return ip + "|bucket:" + p.Bucket
+	}
+	return ip + "|general"
 }
 
 // NewAdvancedRateLimiter creates a new rate limiter middleware with Redis
