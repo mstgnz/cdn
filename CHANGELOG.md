@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- **ImageMagick is pinned instead of tracking the newest upstream release**
+  (#15). The dockerfile resolved "whatever is newest" at build time, so two
+  builds of the same commit could ship different ImageMagick versions, and an
+  upstream publish could break CI and deploys at once with no change here. The
+  version and a SHA-256 checksum are now `ARG`s in the dockerfile, and the
+  tarball comes from the GitHub release assets, which are immutable;
+  `download.imagemagick.org/archive/releases` keeps only the newest release of
+  each major line, so a pin against that host stops resolving as soon as the next
+  version ships. Pinned at 7.1.2-27, the version that was being built before this
+  change. Note that the archive host was serving a beta-labelled tarball of that
+  version (`7.1.2-27 (Beta) ... 24344`); the release asset is the final one
+  (`7.1.2-27 ... e4c2b403b`), so the image no longer ships a beta build.
+  `scripts/get_imagemagick_version.sh` is no longer part of the build and is now
+  an upgrade helper that prints the version and checksum in the format the
+  dockerfile expects.
+- **CI caches the image build** (#14). The ImageMagick compile dominated the job,
+  putting every run at roughly seven minutes; the build now goes through buildx
+  with the GitHub Actions cache backend, so the layer is reused until the pinned
+  version changes.
+
 ## [1.8.0] - 2026-07-25
 
 ### Added

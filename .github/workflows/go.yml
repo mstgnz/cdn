@@ -6,6 +6,11 @@
 # The dockerfile already builds ImageMagick 7 from source, so reusing it keeps
 # a single definition of the toolchain and additionally verifies that the image
 # which actually gets deployed still builds.
+#
+# Compiling ImageMagick takes most of the job's time, so the layers are cached in
+# the GitHub Actions cache. That layer only changes when the pinned
+# IMAGEMAGICK_VERSION in the dockerfile changes, which is why the version is
+# pinned rather than resolved at build time.
 name: Go
 
 on:
@@ -20,10 +25,21 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: docker/setup-buildx-action@v3
+
       # This also covers `go build ./...`: the dockerfile compiles the binary in
       # its last layer, so a compile error fails the build right here.
+      #
+      # load: true puts the image into the local daemon so the next step can run
+      # it. Without it buildx keeps the result in its own cache only.
       - name: Build image
-        run: docker build -t cdn:ci .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: cdn:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       # The image runs the server by default, so the entrypoint is overridden.
       # Tests that need MinIO, Redis or a live server skip themselves when those

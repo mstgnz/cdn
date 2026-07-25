@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     build-essential \
     pkg-config \
+    xz-utils \
     libpng-dev \
     libjpeg-dev \
     libtiff-dev \
@@ -20,14 +21,27 @@ RUN apt-get update && apt-get install -y \
     imagemagick \
     && ldconfig
 
-# Copy and run version check script
-COPY scripts/get_imagemagick_version.sh /tmp/
-RUN chmod +x /tmp/get_imagemagick_version.sh && \
-    cd /tmp && \
-    VERSION=$(/tmp/get_imagemagick_version.sh) && \
-    wget https://download.imagemagick.org/archive/releases/ImageMagick-${VERSION}.tar.gz && \
-    tar xvzf ImageMagick-${VERSION}.tar.gz && \
-    cd ImageMagick-* && \
+# ImageMagick is pinned instead of tracking whatever is newest upstream. Building
+# "the latest release" made two builds of the same commit produce different
+# binaries, and let an upstream publish break CI and deploys at once with no
+# change here.
+#
+# The tarball comes from the GitHub release assets because those are immutable.
+# download.imagemagick.org/archive/releases keeps only the newest release of each
+# major line, so a pin against that host stops resolving as soon as the next
+# version ships.
+#
+# To upgrade, bump both values together in their own commit.
+# `scripts/get_imagemagick_version.sh` prints the newest version and its checksum
+# in exactly the format these two lines expect.
+ARG IMAGEMAGICK_VERSION=7.1.2-27
+ARG IMAGEMAGICK_SHA256=f65773f1f465c730f1c025c92a2524966f772ebeb77de0d817c336e1f565e9ef
+
+RUN cd /tmp && \
+    wget -q "https://github.com/ImageMagick/ImageMagick/releases/download/${IMAGEMAGICK_VERSION}/ImageMagick-${IMAGEMAGICK_VERSION}.tar.xz" && \
+    echo "${IMAGEMAGICK_SHA256}  ImageMagick-${IMAGEMAGICK_VERSION}.tar.xz" | sha256sum -c - && \
+    tar xJf "ImageMagick-${IMAGEMAGICK_VERSION}.tar.xz" && \
+    cd "ImageMagick-${IMAGEMAGICK_VERSION}" && \
     ./configure && \
     make && \
     make install && \
