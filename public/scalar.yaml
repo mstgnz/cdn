@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: CDN API Documentation
-  version: 1.6.3
+  version: 1.8.0
   description: |
     CDN Service is a high-performance, cloud-native content delivery solution built with Go. This service combines modern architectural patterns with enterprise-grade features to offer:
 
@@ -14,10 +14,30 @@ info:
     - Rate limiting protection
 
     ## Authentication
-    Most API endpoints require a Bearer token. Include the token in the header as follows:
+    Most API endpoints require a Bearer token:
     ```
         Authorization: Bearer <your_token>
     ```
+
+    Two kinds of token exist.
+
+    **General token** (the `TOKEN` env var) is accepted on every authenticated
+    endpoint, exactly as before.
+
+    **Bucket-scoped token** has the form `<bucket>:<token>` and authorizes writes to
+    that one bucket only:
+    ```
+        Authorization: Bearer tedarik:6f2c...
+    ```
+    - Accepted on the object write endpoints (`/upload`, `/batch/upload`,
+      `/upload-url`, `/batch/delete`, `DELETE /{bucket}/{path}`, `/resize`).
+    - The `bucket` form or body field becomes optional; the token's bucket is used.
+      Naming a different bucket returns **403**.
+    - Rejected on the operator endpoints (`/aws/*`, `/minio/*`, `/monitor`,
+      `/metrics`, `/ws`), which require the general token.
+
+    Bucket-scoped tokens are configured server-side in `config/tokens.json` (see
+    `config/tokens.template.json`) and read once at boot.
 
     ## Contact
     - **Developer**: Mesut GENEZ
@@ -29,13 +49,44 @@ servers:
   - url: ${APP_URL}
     description: Production server
 
+tags:
+  - name: File
+    description: >-
+      Object write operations. Accept the general token or a bucket-scoped token; a
+      bucket-scoped token may only act on its own bucket and receives 403 for any
+      other, which is why the bucket field is optional for those callers.
+  - name: Image
+    description: >-
+      Image retrieval and transformation. Retrieval is public. POST /resize requires
+      a token (general or bucket-scoped) because it feeds request bytes straight
+      into ImageMagick.
+  - name: Minio
+    description: >-
+      MinIO bucket administration. General token only: these act on arbitrary
+      buckets, so a bucket-scoped token is rejected.
+  - name: AWS
+    description: >-
+      AWS S3 and Glacier operations. General token only.
+  - name: System
+    description: >-
+      Health, metrics and monitoring. /health is public; /metrics and /monitor
+      require the general token.
+  - name: WebSocket
+    description: >-
+      Live stats stream. Requires the general token as a `token` query parameter,
+      since browsers cannot set an Authorization header.
+
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
-      bearerFormat: JWT
-      description: JWT token required for API access
+      description: |
+        Opaque bearer token, not a JWT. Two accepted forms:
+        - General token: the `TOKEN` value. Valid on every authenticated endpoint.
+        - Bucket-scoped token: `<bucket>:<token>`. Valid only on the object write
+          endpoints and only for its own bucket (403 otherwise). Rejected on
+          `/aws/*`, `/minio/*`, `/monitor`, `/metrics` and `/ws`.
   schemas:
     Error:
       type: object
@@ -147,7 +198,10 @@ paths:
                   description: File to upload
                 bucket:
                   type: string
-                  description: Target bucket name
+                  description: >-
+                    Target bucket name. Required with the general token. Optional
+                    with a bucket-scoped token, which always writes to its own
+                    bucket; naming a different bucket returns 403.
                 path:
                   type: string
                   description: Target directory path (optional)
@@ -186,6 +240,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "401":
           description: Unauthorized access
+        "403":
+          description: Bucket-scoped token used for a different bucket
         "413":
           description: File too large
   /batch/upload:
@@ -215,7 +271,10 @@ paths:
                   description: Files to upload
                 bucket:
                   type: string
-                  description: Target bucket name
+                  description: >-
+                    Target bucket name. Required with the general token. Optional
+                    with a bucket-scoped token, which always writes to its own
+                    bucket; naming a different bucket returns 403.
                 path:
                   type: string
                   description: Target directory path (optional)
@@ -240,6 +299,12 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/UploadResponse"
+        "400":
+          description: Invalid request
+        "401":
+          description: Unauthorized access
+        "403":
+          description: Bucket-scoped token used for a different bucket
   /{bucket}/{path}:
     get:
       summary: Get original image
@@ -293,7 +358,9 @@ paths:
           required: true
           schema:
             type: string
-          description: Bucket name
+          description: >-
+            Bucket name. With a bucket-scoped token this must be the token's own
+            bucket; any other value returns 403.
         - name: path
           in: path
           required: false
@@ -318,6 +385,8 @@ paths:
           description: Invalid request
         "401":
           description: Unauthorized access
+        "403":
+          description: Bucket-scoped token used for a different bucket
         "404":
           description: File not found
   /{bucket}/w:{width}/h:{height}/{path}:
@@ -390,12 +459,14 @@ paths:
             schema:
               type: object
               required:
-                - bucket
                 - files
               properties:
                 bucket:
                   type: string
-                  description: Source bucket name
+                  description: >-
+                    Source bucket name. Required with the general token. Optional
+                    with a bucket-scoped token, which always deletes from its own
+                    bucket; naming a different bucket returns 403.
                 files:
                   type: array
                   items:
@@ -435,6 +506,8 @@ paths:
           description: Invalid request
         "401":
           description: Unauthorized access
+        "403":
+          description: Bucket-scoped token used for a different bucket
         "500":
           description: Internal server error
   /upload-url:
@@ -457,7 +530,6 @@ paths:
               type: object
               required:
                 - url
-                - bucket
               properties:
                 url:
                   type: string
@@ -465,7 +537,10 @@ paths:
                   description: Source URL to download from
                 bucket:
                   type: string
-                  description: Target bucket name
+                  description: >-
+                    Target bucket name. Required with the general token. Optional
+                    with a bucket-scoped token, which always writes to its own
+                    bucket; naming a different bucket returns 403.
                 path:
                   type: string
                   description: Target path (optional)
@@ -492,6 +567,8 @@ paths:
           description: Invalid request or URL
         "401":
           description: Unauthorized access
+        "403":
+          description: Bucket-scoped token used for a different bucket
         "413":
           description: File too large
   /resize:

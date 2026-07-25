@@ -2,6 +2,59 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-07-25
+
+### Added
+
+- **Bucket-scoped write tokens (bucket isolation).** A credential can now be
+  limited to a single bucket instead of the whole service. Wire format is
+  `Authorization: Bearer <bucket>:<token>`; entries live in `config/tokens.json`
+  (template: `config/tokens.template.json`, path overridable via `TOKENS_FILE`)
+  and are read once at boot.
+  - Accepted on `/upload`, `/batch/upload`, `/upload-url`, `/batch/delete`,
+    `DELETE /{bucket}/{path}` and `/resize`. The `bucket` form/body field becomes
+    optional for these callers because the token's bucket is authoritative;
+    naming a different bucket returns **403**.
+  - Secrets are SHA-256 hashed in memory after load, compared in constant time,
+    and never logged. An unknown bucket costs the same as a wrong secret.
+  - The bucket prefix is attacker-controlled and grants nothing on its own: the
+    secret is only ever compared against the entry for that exact bucket.
+  - `config/tokens.json` is git-ignored and docker-ignored, mounted read-only at
+    runtime (`./config:/app/config:ro`) and never baked into an image layer.
+  - A missing token file is not an error: deployments that use only the general
+    `TOKEN` behave exactly as before. A file that exists but is invalid (bad JSON,
+    token under 32 characters, invalid or duplicate bucket name) stops boot rather
+    than silently serving with missing credentials.
+  - No runtime token management endpoints: with three API replicas behind nginx,
+    file writes and revocations would not propagate. Edit the file and restart.
+
+### Changed / Hardening
+
+- **Operator endpoints now require the general token.** `AuthMiddleware` was split
+  into `GeneralAuthMiddleware` (general token only, applied to `/aws/*`,
+  `/minio/*`, `/monitor`, `/metrics`) and `BucketAuthMiddleware` (accepts both
+  token kinds, applied to the write endpoints). Without this a bucket-scoped token
+  could have called `DELETE /minio/{bucket}/delete` on any bucket or started
+  cost-bearing Glacier retrievals. `/ws` already required the general token.
+- **Bucket names are validated on creation.** Upload paths that implicitly create
+  a missing bucket now require 3-63 characters of lowercase letters, digits or
+  `-` (new `pkg/bucket`). Previously any string reaching `/upload` or
+  `/upload-url` could create an arbitrarily named bucket. Existing buckets are not
+  re-validated, so nothing that works today stops working.
+- Documentation: `public/scalar.yaml` bumped to 1.8.0 with both token formats, a
+  per-tag statement of which token each group needs, the `403` response on the
+  write endpoints, and `bucket` dropped from the required fields of
+  `/upload-url` and `/batch/delete`. README gained an Authentication section.
+
+### Backward compatibility
+
+The general `TOKEN` continues to work on every endpoint it works on today, and a
+general token containing a `:` is still matched as a whole string before any
+`<bucket>:<secret>` parsing is attempted (covered by a regression test).
+Auth failures keep returning 400 rather than being corrected to 401, so client
+error handling is unchanged. The only new status code is the 403 for a
+bucket-scoped token reaching outside its bucket.
+
 ## [1.7.2] - 2026-07-25
 
 ### Security

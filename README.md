@@ -49,6 +49,7 @@ Perfect for organizations needing a reliable, scalable, and feature-rich content
 ### Security
 
 - Token-based authentication
+- Bucket-scoped tokens for per-bucket write isolation
 - CORS configuration
 - Rate limiting per endpoint with bypass protection
 - Redis-based rate limit storage
@@ -126,6 +127,9 @@ APP_PORT=9090
 APP_NAME=cdn
 TOKEN=your-secure-token
 
+# Optional: path to the bucket-scoped token file (see Authentication below)
+TOKENS_FILE=config/tokens.json
+
 # MinIO Configuration
 MINIO_ENDPOINT=localhost:9000
 MINIO_ROOT_USER=minioadmin
@@ -165,6 +169,72 @@ UPLOAD_URL_ALLOW_PRIVATE=false
 > client token bypass authentication on every protected endpoint. Set a
 > non-empty `TOKEN` in `.env` before deploying. See the full env reference in
 > [`.env.example`](.env.example).
+
+### Authentication
+
+Two kinds of token exist. The general token keeps working exactly as before; the
+bucket-scoped tokens are optional and additive.
+
+#### General token
+
+`TOKEN` in `.env`. Required at boot (the service refuses to start without it) and
+accepted on every authenticated endpoint.
+
+```bash
+curl -H "Authorization: Bearer your-token" ...
+```
+
+#### Bucket-scoped tokens
+
+A bucket-scoped token authorizes writes to exactly one bucket. Its wire format is
+`<bucket>:<token>`:
+
+```bash
+curl -X POST http://localhost:9090/upload \
+  -H "Authorization: Bearer tedarik:6f2c..." \
+  -F "file=@image.jpg"
+```
+
+- Accepted on `/upload`, `/batch/upload`, `/upload-url`, `/batch/delete`,
+  `DELETE /{bucket}/{path}` and `/resize`.
+- The `bucket` form or body field becomes **optional**: the token's own bucket is
+  used. Passing a different bucket returns **403**, so one tenant's credential can
+  never touch another tenant's objects.
+- **Rejected** on the operator endpoints (`/aws/*`, `/minio/*`, `/monitor`,
+  `/metrics`, `/ws`). Those act on arbitrary buckets or expose service-wide data
+  and need the general token.
+
+Setup:
+
+```bash
+cp config/tokens.template.json config/tokens.json
+openssl rand -hex 32          # generate a token per bucket
+$EDITOR config/tokens.json
+docker compose up -d --build  # the file is read once at boot
+```
+
+```json
+{
+  "buckets": [
+    { "bucket": "tedarik", "token": "<32+ characters>", "label": "supply app" }
+  ]
+}
+```
+
+Security notes:
+
+- `config/tokens.json` is git-ignored and docker-ignored. It is mounted read-only
+  at runtime and never baked into an image layer.
+- Tokens must be at least 32 characters; a bucket name must be 3-63 characters of
+  lowercase letters, digits or `-`. An invalid file stops boot rather than
+  silently dropping credentials. A missing file is fine and means the general
+  token is the only credential.
+- Secrets are hashed in memory after load and never appear in logs or responses.
+- There is no runtime endpoint that mints or revokes tokens: with three API
+  replicas behind nginx such writes would not propagate. Edit the file and
+  restart.
+- Read access is unaffected. `GET /{bucket}/{path}` stays public, so bucket
+  isolation covers writes only.
 
 ### API Usage
 
@@ -221,6 +291,8 @@ curl -X DELETE http://localhost:9090/your-bucket/image.jpg \
 ```
 
 #### Bucket Operations
+
+These require the general token; a bucket-scoped token is rejected.
 
 1. List buckets:
 
