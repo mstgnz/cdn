@@ -1,6 +1,11 @@
-# This workflow will build a golang project
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
-
+# Build and test the service.
+#
+# The build runs inside the project image rather than directly on the runner.
+# gopkg.in/gographics/imagick.v3 is a cgo binding to ImageMagick 7, which the
+# runner does not have and cannot get from apt (Ubuntu ships ImageMagick 6).
+# The dockerfile already builds ImageMagick 7 from source, so reusing it keeps
+# a single definition of the toolchain and additionally verifies that the image
+# which actually gets deployed still builds.
 name: Go
 
 on:
@@ -13,15 +18,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: "1.22"
+      # This also covers `go build ./...`: the dockerfile compiles the binary in
+      # its last layer, so a compile error fails the build right here.
+      - name: Build image
+        run: docker build -t cdn:ci .
 
-      - name: Build
-        run: go build -v ./...
-
+      # The image runs the server by default, so the entrypoint is overridden.
+      # Tests that need MinIO, Redis or a live server skip themselves when those
+      # are unreachable, which is the case inside this container.
       - name: Test
-        run: go test -v ./...
+        run: docker run --rm --entrypoint go cdn:ci test ./...
