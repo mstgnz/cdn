@@ -2,3 +2,7 @@
 .env
 .idea
 tmp
+
+# Bucket-scoped token file. Only config/tokens.template.json is tracked.
+config/tokens.json
+config/tokens-*.json

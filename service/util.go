@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/subtle"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -109,20 +108,20 @@ func DownloadFile(filepath string, url string) error {
 	return err
 }
 
+// CheckToken authenticates a request against the general TOKEN only. A
+// bucket-scoped token is rejected here, which is what gates the operator routes
+// (/aws, /minio, /monitor, /metrics): those act on any bucket or expose
+// service-wide data, so a credential limited to a single bucket must not reach
+// them. Bucket-aware routes use ResolvePrincipal instead.
 func CheckToken(c *fiber.Ctx) error {
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		return errors.New("no token provided")
-	}
-
-	getToken := strings.Split(authHeader, " ")
-	if len(getToken) != 2 {
-		return errors.New("invalid authorization format")
+	raw, err := BearerToken(c)
+	if err != nil {
+		return err
 	}
 
 	// Never echo the provided or server token back to the caller.
-	if !TokenValid(getToken[1]) {
-		return errors.New("invalid token")
+	if !TokenValid(raw) {
+		return ErrInvalidToken
 	}
 	return nil
 }

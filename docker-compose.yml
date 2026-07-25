@@ -20,6 +20,11 @@ services:
         max-file: "3"
     volumes:
       - ./:/cdn
+      # Bucket-scoped tokens are read at boot from the working directory (/app),
+      # so the file has to be mounted there rather than under the /cdn mount
+      # above. Read-only: the service never writes it. Absent file is fine, the
+      # general TOKEN then remains the only credential.
+      - ./config:/app/config:ro
     depends_on:
       - minio
       - redis

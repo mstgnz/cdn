@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/pkg/batch"
+	bucketname "github.com/mstgnz/cdn/pkg/bucket"
 	"github.com/mstgnz/cdn/pkg/config"
 	"github.com/mstgnz/cdn/pkg/filetype"
 	"github.com/mstgnz/cdn/pkg/validator"
@@ -56,10 +57,14 @@ type ImageProcessRequest struct {
 	Filename    string
 }
 
-// UploadUrlRequest represents the request body for URL-based uploads
+// UploadUrlRequest represents the request body for URL-based uploads.
+//
+// Bucket carries no "required" tag: a bucket-scoped token already names its
+// bucket, so the field is optional for those callers. Emptiness is enforced
+// after the token and the request have been reconciled by resolveBucket.
 type UploadUrlRequest struct {
 	Path      string `json:"path"`
-	Bucket    string `json:"bucket" validate:"required"`
+	Bucket    string `json:"bucket"`
 	URL       string `json:"url" validate:"required,url"`
 	AWSUpload bool   `json:"aws_upload"`
 	Optimize  bool   `json:"optimize"`
@@ -148,9 +153,10 @@ type BatchUploadRequest struct {
 	AWSUpload bool     `json:"aws_upload"`
 }
 
-// BatchDeleteRequest represents the request body for batch deletions
+// BatchDeleteRequest represents the request body for batch deletions. Bucket is
+// optional for the same reason as UploadUrlRequest.Bucket.
 type BatchDeleteRequest struct {
-	Bucket    string   `json:"bucket" validate:"required"`
+	Bucket    string   `json:"bucket"`
 	Files     []string `json:"files" validate:"required,min=1"`
 	AWSDelete bool     `json:"aws_delete"`
 }
@@ -281,12 +287,23 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	ctx := context.Background()
 
 	path := c.FormValue("path")
-	bucket := c.FormValue("bucket")
 	file, err := c.FormFile("file")
 	awsUpload := c.FormValue("aws_upload") == "true"
 
 	if file == nil || err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!", nil)
+	}
+
+	// The bucket a scoped token owns wins over whatever the form says; a scoped
+	// token naming someone else's bucket is refused outright. Deliberately after
+	// the file check so a non-multipart body still reports "File Not Found!"
+	// rather than a bucket complaint.
+	bucket, err := resolveBucket(c, c.FormValue("bucket"))
+	if err != nil {
+		return bucketForbidden(c)
+	}
+	if bucket == "" {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
 	}
 
 	// Check to see if the bucket already exists. BucketExists returns
@@ -298,6 +315,12 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "bucket check failed: "+err.Error(), nil)
 	}
 	if !exists {
+		// Only a genuinely new bucket is name-checked. Buckets that already exist
+		// predate this rule and must keep working whatever they are called, so the
+		// check sits here rather than on the upload path as a whole.
+		if err := bucketname.Validate(bucket); err != nil {
+			return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		}
 		if err := i.minioClient.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
 			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
 		}
@@ -479,6 +502,16 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
+	// Reconcile the body with the token before anything acts on req.Bucket.
+	bucketName, err := resolveBucket(c, req.Bucket)
+	if err != nil {
+		return bucketForbidden(c)
+	}
+	if bucketName == "" {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
+	}
+	req.Bucket = bucketName
+
 	// SSRF guard: reject non-http(s) schemes and literal private/loopback/
 	// metadata targets before any request is made. Ordered before the MinIO
 	// call so it is exercised without a live storage backend.
@@ -493,6 +526,10 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "bucket check failed: "+err.Error(), nil)
 	}
 	if !exists {
+		// See UploadImage: the name rule applies to bucket creation only.
+		if err := bucketname.Validate(req.Bucket); err != nil {
+			return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		}
 		if err := i.minioClient.MakeBucket(ctx, req.Bucket, minio.MakeBucketOptions{}); err != nil {
 			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
 		}
@@ -608,7 +645,13 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 // DeleteImage handles image deletion
 func (i image) DeleteImage(c *fiber.Ctx) error {
 	ctx := context.Background()
-	bucket := c.Params("bucket")
+
+	// This is the one write route with the bucket in the URL path, so a scoped
+	// token deleting from another bucket is refused here.
+	bucket, err := resolveBucket(c, c.Params("bucket"))
+	if err != nil {
+		return bucketForbidden(c)
+	}
 	awsDelete := c.Params("aws_delete") == "true"
 	object := c.Params("*")
 
@@ -757,8 +800,15 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "Invalid form data", nil)
 	}
 
-	bucket := form.Value["bucket"]
-	if len(bucket) == 0 {
+	requestedBucket := ""
+	if v := form.Value["bucket"]; len(v) > 0 {
+		requestedBucket = v[0]
+	}
+	bucketName, err := resolveBucket(c, requestedBucket)
+	if err != nil {
+		return bucketForbidden(c)
+	}
+	if bucketName == "" {
 		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
 	}
 
@@ -772,13 +822,13 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 	optimize := form.Value["optimize"] != nil && form.Value["optimize"][0] == "true"
 
 	// Check bucket existence
-	exists, err := i.minioClient.BucketExists(context.Background(), bucket[0])
+	exists, err := i.minioClient.BucketExists(context.Background(), bucketName)
 	if err != nil || !exists {
 		return service.Response(c, fiber.StatusBadRequest, false, "Bucket not found", nil)
 	}
 
 	// Check AWS bucket if needed
-	if awsUpload && !i.awsService.BucketExists(bucket[0]) {
+	if awsUpload && !i.awsService.BucketExists(bucketName) {
 		return service.Response(c, fiber.StatusBadRequest, false, "AWS bucket not found", nil)
 	}
 
@@ -876,7 +926,7 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 			// Upload to MinIO
 			_, err = i.minioClient.PutObject(
 				context.Background(),
-				bucket[0],
+				bucketName,
 				objectName,
 				minioReader,
 				uploadSize,
@@ -899,7 +949,7 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 					_, _ = fileContent.Seek(0, 0)
 					awsReader = fileContent
 				}
-				_, err = i.awsService.S3PutObject(bucket[0], objectName, awsReader)
+				_, err = i.awsService.S3PutObject(bucketName, objectName, awsReader)
 				if err != nil {
 					result["aws_error"] = err.Error()
 				}
@@ -938,6 +988,16 @@ func (i *image) BatchDelete(c *fiber.Ctx) error {
 	if err := validator.ValidateStruct(req); err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
+
+	// Reconcile the body with the token before anything acts on req.Bucket.
+	bucketName, err := resolveBucket(c, req.Bucket)
+	if err != nil {
+		return bucketForbidden(c)
+	}
+	if bucketName == "" {
+		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
+	}
+	req.Bucket = bucketName
 
 	// Cap the batch size so a huge JSON array cannot pre-allocate an unbounded
 	// result channel / slice (memory DoS).

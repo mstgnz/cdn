@@ -54,6 +54,18 @@ func main() {
 		logger.Fatal().Msg("TOKEN environment variable must be set (authentication would otherwise be bypassable)")
 	}
 
+	// Optional bucket-scoped tokens. A missing file is the normal state of a
+	// deployment that authenticates with the general TOKEN alone, so it must not
+	// stop boot. A file that exists but is invalid must stop boot: serving with
+	// half of the intended credentials is worse than serving with none, because
+	// the affected callers would only see a bare "invalid token".
+	tokensFile := config.GetEnvOrDefault("TOKENS_FILE", "config/tokens.json")
+	bucketTokenCount, err := config.LoadBucketTokens(tokensFile)
+	if err != nil {
+		logger.Fatal().Err(err).Str("file", tokensFile).Msg("bucket token file is present but invalid")
+	}
+	logger.Info().Int("count", bucketTokenCount).Str("file", tokensFile).Msg("bucket-scoped tokens loaded")
+
 	// ImageMagick reads MAGICK_* limits at genesis, so these must be exported
 	// before Initialize(). The imagick.v3 binding has no width/height resource
 	// constants, so pixel-dimension caps go through these env vars.
@@ -179,7 +191,7 @@ func main() {
 	app.Use(observability.PrometheusMiddleware())
 
 	// Metrics endpoint (auth-gated: Prometheus sends the token as a Bearer header)
-	app.Get("/metrics", AuthMiddleware, observability.MetricsHandler)
+	app.Get("/metrics", GeneralAuthMiddleware, observability.MetricsHandler)
 
 	// WebSocket middleware
 	app.Use("/ws", func(c *fiber.Ctx) error {
@@ -202,10 +214,10 @@ func main() {
 	}))
 
 	// Monitoring endpoint
-	app.Get("/monitor", AuthMiddleware, wsHandler.MonitorStats)
+	app.Get("/monitor", GeneralAuthMiddleware, wsHandler.MonitorStats)
 
 	// Aws
-	aws := app.Group("/aws", AuthMiddleware)
+	aws := app.Group("/aws", GeneralAuthMiddleware)
 	aws.Get("/bucket-list", awsHandler.BucketList)
 	aws.Get("/:bucket/exists", awsHandler.BucketExists)
 	aws.Get("/vault-list", awsHandler.GlacierVaultList)
@@ -222,7 +234,7 @@ func main() {
 	aws.Get("/glacier/downloads/:downloadJobId/status", awsHandler.GlacierCheckDownloadStatus)
 
 	// Minio
-	io := app.Group("/minio", AuthMiddleware)
+	io := app.Group("/minio", GeneralAuthMiddleware)
 	io.Get("/bucket-list", minioHandler.BucketList)
 	io.Get("/:bucket/exists", minioHandler.BucketExists)
 	io.Get("/:bucket/create", minioHandler.CreateBucket)
@@ -232,7 +244,7 @@ func main() {
 	// Auth-gated: /resize feeds arbitrary request bytes straight into ImageMagick
 	// (decode + resize), so it must not be an unauthenticated compute/attack
 	// surface like the other write endpoints.
-	app.Post("/resize", AuthMiddleware, imageHandler.ResizeImage)
+	app.Post("/resize", BucketAuthMiddleware, imageHandler.ResizeImage)
 
 	// Minio
 	if !disableGet {
@@ -253,20 +265,20 @@ func main() {
 	// otherwise the wildcard matches "DELETE /batch/delete" (bucket="batch",
 	// *="delete") and shadows it, routing to DeleteImage instead of BatchDelete.
 	if !disableUpload {
-		app.Delete("/batch/delete", AuthMiddleware, imageHandler.BatchDelete)
+		app.Delete("/batch/delete", BucketAuthMiddleware, imageHandler.BatchDelete)
 	}
 
 	if !disableDelete {
-		app.Delete("/:bucket/*", AuthMiddleware, imageHandler.DeleteImage)
+		app.Delete("/:bucket/*", BucketAuthMiddleware, imageHandler.DeleteImage)
 	}
 
 	// Upload endpoints with stricter rate limit - 50 requests per minute
 	if !disableUpload {
 		uploadGroup := app.Group("/")
 		uploadGroup.Use(middleware.NewAdvancedRateLimiter(config.GetEnvAsIntOrDefault("UPLOAD_RATE_LIMIT", 50), time.Minute))
-		uploadGroup.Post("/upload", AuthMiddleware, imageHandler.UploadImage)
-		uploadGroup.Post("/upload-url", AuthMiddleware, imageHandler.UploadWithUrl)
-		uploadGroup.Post("/batch/upload", AuthMiddleware, imageHandler.BatchUpload)
+		uploadGroup.Post("/upload", BucketAuthMiddleware, imageHandler.UploadImage)
+		uploadGroup.Post("/upload-url", BucketAuthMiddleware, imageHandler.UploadWithUrl)
+		uploadGroup.Post("/batch/upload", BucketAuthMiddleware, imageHandler.BatchUpload)
 	}
 
 	// Index
@@ -319,10 +331,28 @@ func main() {
 	logger.Info().Msg("Server gracefully stopped")
 }
 
-func AuthMiddleware(c *fiber.Ctx) error {
+// GeneralAuthMiddleware gates the operator routes: it accepts the general TOKEN
+// only, so a bucket-scoped token can never reach an endpoint that acts on
+// arbitrary buckets (list, create, remove) or exposes service-wide data.
+//
+// The 400 status is kept instead of being corrected to 401 so that clients see
+// exactly the response they see today.
+func GeneralAuthMiddleware(c *fiber.Ctx) error {
 	if err := service.CheckToken(c); err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
+	return c.Next()
+}
+
+// BucketAuthMiddleware gates the object write routes. It accepts the general
+// TOKEN as well as a bucket-scoped token, and records the resolved principal so
+// each handler can reconcile it with the bucket named in the request.
+func BucketAuthMiddleware(c *fiber.Ctx) error {
+	p, err := service.ResolvePrincipal(c)
+	if err != nil {
+		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+	}
+	service.StorePrincipal(c, p)
 	return c.Next()
 }
 

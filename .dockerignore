@@ -3,6 +3,12 @@
 .env
 .env.*
 
+# Bucket-scoped token file: mounted read-only at runtime (see docker-compose.yml),
+# never baked into an image layer. The dockerfile does a blanket `COPY . .`, so
+# without this the file would end up in the image whenever it exists locally.
+config/tokens.json
+config/tokens-*.json
+
 # Version control
 .git
 .gitignore

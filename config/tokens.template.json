@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "Copy this file to config/tokens.json and fill in real values.",
+    "config/tokens.json is git-ignored and docker-ignored: it is mounted at runtime, never baked into the image.",
+    "Each token authorizes writes (upload, delete) to exactly one bucket. Callers send it as: Authorization: Bearer <bucket>:<token>",
+    "The general TOKEN env var keeps working everywhere and is the only credential accepted on the /aws, /minio, /monitor and /metrics routes.",
+    "Tokens must be at least 32 characters, so copying this file unedited fails at boot on purpose. Generate one with: openssl rand -hex 32",
+    "Bucket names must be 3-63 characters of lowercase letters, digits or '-'.",
+    "The file is read once at boot; restart the service after editing it."
+  ],
+  "buckets": [
+    {
+      "bucket": "example-bucket",
+      "token": "REPLACE_ME",
+      "label": "optional note about who uses this token"
+    }
+  ]
+}
