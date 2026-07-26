@@ -31,6 +31,19 @@ spec:
                 configMapKeyRef:
                   name: cdn-config
                   key: minio_endpoint
+            # The general token. The service fails fast at boot without it, so
+            # the deployment cannot start unless this is wired.
+            - name: TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cdn-secrets
+                  key: app_token
+          volumeMounts:
+            # Bucket-scoped tokens. The default TOKENS_FILE is config/tokens.json
+            # relative to the working directory, which the image sets to /app.
+            - name: bucket-tokens
+              mountPath: /app/config
+              readOnly: true
           resources:
             requests:
               memory: "256Mi"
@@ -50,3 +63,15 @@ spec:
               port: 9090
             initialDelaySeconds: 15
             periodSeconds: 20
+      volumes:
+        - name: bucket-tokens
+          secret:
+            secretName: cdn-secrets
+            # optional so a cluster whose Secret predates this key still starts:
+            # the service treats a missing token file as "general token only".
+            optional: true
+            # Only this one key is projected, so the rest of cdn-secrets is not
+            # exposed as files in the container.
+            items:
+              - key: tokens_json
+                path: tokens.json

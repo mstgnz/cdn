@@ -27,22 +27,67 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      # This also covers `go build ./...`: the dockerfile compiles the binary in
-      # its last layer, so a compile error fails the build right here.
+      # Tests run in the build stage, not the final image: the runtime stage
+      # deliberately has no Go toolchain. This step also covers `go build ./...`,
+      # since the stage compiles the binary in its last layer.
       #
       # load: true puts the image into the local daemon so the next step can run
       # it. Without it buildx keeps the result in its own cache only.
-      - name: Build image
+      - name: Build toolchain stage
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: build
+          load: true
+          tags: cdn:build
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Test
+        run: docker run --rm --entrypoint go cdn:build test ./...
+
+      # Building the runtime stage on top reuses everything above from cache and
+      # verifies that the image which actually ships still assembles.
+      - name: Build runtime image
         uses: docker/build-push-action@v6
         with:
           context: .
           load: true
           tags: cdn:ci
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
-      # The image runs the server by default, so the entrypoint is overridden.
-      # Tests that need MinIO, Redis or a live server skip themselves when those
-      # are unreachable, which is the case inside this container.
-      - name: Test
-        run: docker run --rm --entrypoint go cdn:ci test ./...
+      # Losing docker/policy.xml or MAGICK_CONFIGURE_PATH in the runtime stage
+      # would disable the ImageMagick hardening silently, so assert it is live in
+      # the image that ships rather than trusting the dockerfile to be right.
+      - name: Verify the ImageMagick policy is active in the runtime image
+        run: |
+          policy=$(docker run --rm --entrypoint magick cdn:ci -list policy)
+          echo "$policy"
+          for pattern in \
+            "Path: /etc/ImageMagick/policy.xml" \
+            "pattern: PDF" \
+            "pattern: MSL" \
+            "Policy: Delegate"; do
+            echo "$policy" | grep -q -- "$pattern" || {
+              echo "::error::ImageMagick policy is not active, missing: $pattern"
+              exit 1
+            }
+          done
+
+      # The Go tests run in the build stage, so a codec package missing from the
+      # runtime stage would not fail them: decoding would break only in
+      # production. Exercise the formats the service actually handles, in the
+      # image that ships, and confirm a blocked coder stays blocked.
+      - name: Verify image decoding in the runtime image
+        run: |
+          docker run --rm --entrypoint sh cdn:ci -c '
+            set -e
+            for fmt in png jpeg webp gif tiff; do
+              magick -size 64x64 gradient:red-blue "/tmp/t.$fmt"
+              magick "/tmp/t.$fmt" -resize 32x32 "info:-"
+            done
+            if magick -size 10x10 xc:white /tmp/x.pdf 2>/dev/null; then
+              echo "PDF coder is not blocked; the security policy is not being applied"
+              exit 1
+            fi
+          '

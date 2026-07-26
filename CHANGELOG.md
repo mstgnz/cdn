@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+
+- **The general `TOKEN` is now checked for strength at boot** (#10). It was only
+  checked for emptiness, so a one-character token or a copied placeholder started
+  the service and was accepted on every authenticated endpoint, operator routes
+  included. It must now be at least 32 characters, the same floor bucket-scoped
+  tokens already had, and must not be a template placeholder. **Breaking** for a
+  deployment running a short token: it will refuse to start until the token is
+  replaced. `.env.example` now ships `REPLACE_ME`, which fails that check on
+  purpose.
+- **The image no longer ships a build toolchain** (#16, see below). A production
+  image without compilers, headers or a source tree is a smaller thing to attack.
+
 ### Added
 
 - **Audit logging on the authentication path** (#11). Rejected credentials and
@@ -23,8 +36,42 @@ All notable changes to this project will be documented in this file.
   deliberately not logged: on a CDN that is the hot path and the access log
   already covers it.
 
+- **Optional expiry for bucket-scoped tokens** (#13). An entry may carry an
+  `expires_at` RFC 3339 timestamp; omitting it means the token never expires, so
+  existing files are unaffected. Expiry is evaluated per request rather than at
+  load time, which matters under the read-once-at-boot model: a token stops
+  working the moment it expires instead of lasting until the next restart. An
+  expired token is rejected exactly like an unknown one. A mistyped timestamp
+  fails the boot rather than being read as "no expiry", and the boot log warns
+  about entries that have already expired or expire within a week.
+- **Bucket-scoped tokens can be deployed on Kubernetes** (#12). `k8s/secrets.yaml`
+  gained a `tokens_json` key, projected by `k8s/deployment.yaml` into the pod at
+  `/app/config/tokens.json` from a read-only, `optional` secret volume. It holds
+  credentials, so it is a Secret and not a ConfigMap. While wiring it, `TOKEN`
+  itself turned out never to have been wired into the deployment at all, which
+  meant the manifests could not boot; it is now read from `cdn-secrets.app_token`.
+
 ### Changed
 
+- **The image is built in two stages and is 9x smaller** (#16), from **1.88 GB**
+  down to **205 MB**. The single-stage build shipped everything used to produce
+  the binary: the Go toolchain (251 MB on its own), `build-essential`, the `-dev`
+  packages, the ImageMagick source tree and the whole repository. The runtime
+  stage now starts from `debian:bullseye-slim` (matching the build stage's glibc
+  and codec libraries) and receives only the binary, `public/`, the ImageMagick
+  shared libraries and modules, and the runtime library closure, which was
+  derived with `ldd` over the binary and every coder module and mapped to
+  packages with `dpkg -S`. `ca-certificates` is installed explicitly: it is
+  absent from the slim base, and without it every outbound HTTPS call
+  (`/upload-url`, the AWS SDK) would fail x509 verification.
+
+  The hardened `policy.xml` and `MAGICK_CONFIGURE_PATH` carry over to the runtime
+  stage. Because losing either would disable the ImageMagick hardening silently,
+  CI now asserts the policy is live in the image that ships (`magick -list
+  policy`) and that PNG, JPEG, WebP, GIF and TIFF still decode there while the
+  PDF coder stays blocked. That last check matters because the Go tests run in
+  the build stage, so a codec package missing from the runtime stage would not
+  have failed them.
 - **ImageMagick is pinned instead of tracking the newest upstream release**
   (#15). The dockerfile resolved "whatever is newest" at build time, so two
   builds of the same commit could ship different ImageMagick versions, and an

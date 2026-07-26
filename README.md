@@ -177,11 +177,16 @@ bucket-scoped tokens are optional and additive.
 
 #### General token
 
-`TOKEN` in `.env`. Required at boot (the service refuses to start without it) and
-accepted on every authenticated endpoint.
+`TOKEN` in `.env`, accepted on every authenticated endpoint.
+
+The service refuses to start unless it is at least 32 characters and is not a
+template placeholder (`REPLACE_ME`, `changeme`, `your-token-here` and similar).
+A general token is accepted on the operator routes too, so a weak one weakens
+every endpoint at once.
 
 ```bash
-curl -H "Authorization: Bearer your-token" ...
+openssl rand -hex 32                          # generate
+curl -H "Authorization: Bearer your-token" ...  # use
 ```
 
 #### Bucket-scoped tokens
@@ -203,6 +208,9 @@ curl -X POST http://localhost:9090/upload \
 - **Rejected** on the operator endpoints (`/aws/*`, `/minio/*`, `/monitor`,
   `/metrics`, `/ws`). Those act on arbitrary buckets or expose service-wide data
   and need the general token.
+- Optionally expiring, via `expires_at` (RFC 3339). Expiry is checked per
+  request, so a token stops working the moment it passes without waiting for a
+  restart. Omit the field for a token that never expires.
 
 Setup:
 
@@ -216,7 +224,8 @@ docker compose up -d --build  # the file is read once at boot
 ```json
 {
   "buckets": [
-    { "bucket": "tedarik", "token": "<32+ characters>", "label": "supply app" }
+    { "bucket": "tedarik", "token": "<32+ characters>", "label": "supply app" },
+    { "bucket": "tramer", "token": "<32+ characters>", "expires_at": "2026-12-31T00:00:00Z" }
   ]
 }
 ```
@@ -351,7 +360,7 @@ For production deployments, we provide comprehensive Kubernetes configurations w
 - Resource quotas and limits
 - Health monitoring and readiness probes
 - Load balancing strategies
-- Secrets management
+- Secrets management, including the bucket-scoped token file
 - Persistent volume claims
 
 For detailed instructions, see [Kubernetes Deployment Guide](k8s/README.md)

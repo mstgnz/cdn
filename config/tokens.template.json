@@ -6,6 +6,7 @@
     "The general TOKEN env var keeps working everywhere and is the only credential accepted on the /aws, /minio, /monitor and /metrics routes.",
     "Tokens must be at least 32 characters, so copying this file unedited fails at boot on purpose. Generate one with: openssl rand -hex 32",
     "Bucket names must be 3-63 characters of lowercase letters, digits or '-'.",
+    "expires_at is optional (RFC 3339). Omit it for a token that never expires. It is checked per request, so an expired token stops working without a restart.",
     "The file is read once at boot; restart the service after editing it."
   ],
   "buckets": [
@@ -13,6 +14,12 @@
       "bucket": "example-bucket",
       "token": "REPLACE_ME",
       "label": "optional note about who uses this token"
+    },
+    {
+      "bucket": "example-with-expiry",
+      "token": "REPLACE_ME",
+      "label": "optional",
+      "expires_at": "2026-12-31T00:00:00Z"
     }
   ]
 }

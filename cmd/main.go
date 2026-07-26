@@ -49,10 +49,12 @@ func main() {
 		logger.Warn().Err(err).Msg(".env not loaded; relying on process environment")
 	}
 
-	// Fail fast if TOKEN is unset: an empty server token makes every
-	// authenticated endpoint (upload, delete, batch, AWS/Glacier) bypassable.
-	if strings.TrimSpace(config.GetEnvOrDefault("TOKEN", "")) == "" {
-		logger.Fatal().Msg("TOKEN environment variable must be set (authentication would otherwise be bypassable)")
+	// Fail fast on a TOKEN that cannot carry the weight put on it: unset, a
+	// template placeholder, or shorter than a bucket-scoped token is allowed to
+	// be. The general token is accepted on every authenticated endpoint including
+	// the operator routes, so a weak one silently weakens all of them.
+	if err := config.ValidateGeneralToken(config.GetEnvOrDefault("TOKEN", "")); err != nil {
+		logger.Fatal().Err(err).Msg("invalid TOKEN configuration")
 	}
 
 	// Optional bucket-scoped tokens. A missing file is the normal state of a
@@ -66,6 +68,17 @@ func main() {
 		logger.Fatal().Err(err).Str("file", tokensFile).Msg("bucket token file is present but invalid")
 	}
 	logger.Info().Int("count", bucketTokenCount).Str("file", tokensFile).Msg("bucket-scoped tokens loaded")
+
+	// An expired token is not a boot failure, the deployment is still safe. It is
+	// the callers who stop working, so surface it here rather than leaving them
+	// to discover it as a bare "invalid token".
+	expired, expiringSoon := config.BucketTokenExpiryWarnings(time.Now(), 7*24*time.Hour)
+	if len(expired) > 0 {
+		logger.Warn().Strs("buckets", expired).Msg("bucket-scoped tokens have expired and will be rejected")
+	}
+	if len(expiringSoon) > 0 {
+		logger.Warn().Strs("buckets", expiringSoon).Msg("bucket-scoped tokens expire within a week")
+	}
 
 	// ImageMagick reads MAGICK_* limits at genesis, so these must be exported
 	// before Initialize(). The imagick.v3 binding has no width/height resource
