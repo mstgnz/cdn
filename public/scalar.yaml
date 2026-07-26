@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: CDN API Documentation
-  version: 1.8.0
+  version: 1.9.0
   description: |
     CDN Service is a high-performance, cloud-native content delivery solution built with Go. This service combines modern architectural patterns with enterprise-grade features to offer:
 
@@ -44,10 +44,10 @@ info:
     - **GitHub**: [https://github.com/mstgnz/cdn](https://github.com/mstgnz/cdn)
 
 servers:
-  - url: http://localhost:9090
-    description: Local development server
   - url: ${APP_URL}
     description: Production server
+  - url: http://localhost:9090
+    description: Local development server
 
 tags:
   - name: File
@@ -78,6 +78,13 @@ tags:
 
 components:
   securitySchemes:
+    TokenQuery:
+      type: apiKey
+      in: query
+      name: token
+      description: |
+        The general token, passed as a query parameter. Used only by /ws:
+        browsers cannot set an Authorization header on a WebSocket handshake.
     BearerAuth:
       type: http
       scheme: bearer
@@ -328,6 +335,8 @@ paths:
           schema:
             type: string
           description: File path
+      # Public: serving objects is the point of a CDN. Writes are the authenticated part.
+      security: []
       responses:
         "200":
           description: Image file
@@ -428,6 +437,8 @@ paths:
           schema:
             type: string
           description: File path
+      # Public, like the other read routes.
+      security: []
       responses:
         "200":
           description: Resized image
@@ -626,6 +637,8 @@ paths:
         - Cache service
       tags:
         - System
+      # Public: used by load balancers and probes, no credential required.
+      security: []
       responses:
         "200":
           description: Successful health check
@@ -726,7 +739,10 @@ paths:
         - Error states
       tags:
         - WebSocket
-      security: []
+      # Not public: the token goes in the query string, since a browser
+      # cannot set an Authorization header on a WebSocket handshake.
+      security:
+        - TokenQuery: []
       parameters:
         - name: token
           in: query

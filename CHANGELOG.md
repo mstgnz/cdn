@@ -28,6 +28,20 @@ All notable changes to this project will be documented in this file.
   are now wired; the AWS ones are marked optional so a MinIO-only cluster can
   omit them entirely.
 
+### Fixed (documentation)
+
+- **The API reference misstated which endpoints need a credential.** A global
+  `security` default meant every operation without an explicit override inherited
+  `BearerAuth`, so the spec claimed a token was required for `GET /health` and for
+  serving objects (`GET /{bucket}/{path}` and the resize variant), all three of
+  which are public. `GET /ws` had the opposite problem: it declared `security: []`
+  while actually requiring a token. All four now say what the router does, and
+  `/ws` gets a `TokenQuery` scheme, since a browser cannot set an Authorization
+  header on a WebSocket handshake.
+- `public/scalar.yaml` was still versioned 1.8.0, and listed `localhost:9090`
+  ahead of the production server, so the public documentation page defaulted to
+  pointing readers at their own machine.
+
 ### Added
 
 - **End-to-end tests for the behaviour that was previously only checked by hand**
