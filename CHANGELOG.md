@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- **Path-based resize served the original image.** `/{bucket}/w:{width}/h:{height}/{path}`
+  and its width-only and height-only variants are routed and documented, but
+  `GetImage` only ever read the query form, so all three quietly returned the
+  image untouched. Introduced in `0b66ad1`, which replaced the path lookup with
+  the query one instead of adding it; both are read now. The query form
+  (`?width=&height=`) was never affected.
+- **SVG objects could not be rendered by browsers.** They were served as
+  `text/plain`, because `http.DetectContentType` cannot recognise SVG, and the
+  global `X-Content-Type-Options: nosniff` then correctly stopped the browser
+  from treating them as images: `<img src="…​.svg">` displayed nothing. They now
+  go out as `image/svg+xml`. The protection against inline `<script>` was never
+  the wrong content type, it is the `default-src 'none'; sandbox` CSP that was
+  already being sent, and that is unchanged. Everything else keeps its sniffed
+  type, so a valid image carrying an appended payload still serves as `image/*`.
+- **The Kubernetes deployment could not reach MinIO.** `MINIO_ROOT_USER` and
+  `MINIO_ROOT_PASSWORD` sat in `cdn-secrets` but were never wired into the
+  container, as did the AWS credentials. `MINIO_USE_SSL`, the `DISABLE_*` flags
+  and `APP_URL` were defined in the ConfigMap and equally unused, the last of
+  which meant upload responses would hand callers a `cdn.example.com` link. All
+  are now wired; the AWS ones are marked optional so a MinIO-only cluster can
+  omit them entirely.
+
+### Added
+
+- **End-to-end tests for the behaviour that was previously only checked by hand**
+  (`test/integration/image_test.go`): the upload, serve, resize and delete
+  lifecycle, dimension clamping, rejection of files whose content does not match
+  their extension, inert serving of a valid image carrying an appended payload,
+  and bucket-scoped token isolation including the operator routes. They skip
+  unless a stack is running and `CDN_TEST_TOKEN` is set, in the same spirit as
+  the existing integration tests.
+
+### Fixed (tests)
+
+- `TestMetricsEndpoint` asserted that `/metrics` returns 200 without a token,
+  which stopped being true in 1.7.0 when the endpoint was closed off. It had
+  never failed because it skips when no server is running. It now checks both
+  sides of the gate: rejected without a token, 200 with one.
+
 ## [1.9.0] - 2026-07-26
 
 ### Security

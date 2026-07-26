@@ -202,8 +202,18 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	var resize bool
 
 	if service.IsImageFile(objectName) {
-		// Get width and height from query parameters
-		resize, width, height = service.GetWidthAndHeight(c, service.QueryType)
+		// Both forms are documented and routed, so both have to be read here: the
+		// path form (/:bucket/w:100/h:100/*, and the width- or height-only
+		// variants) and the query form (?width=100&height=100).
+		//
+		// Reading only the query form silently served the original for every path
+		// request, because those routes still matched and this branch then found
+		// no dimensions. The path form is checked first since it is the more
+		// specific route; a request that carries neither falls through unresized.
+		resize, width, height = service.GetWidthAndHeight(c, service.ParamsType)
+		if !resize {
+			resize, width, height = service.GetWidthAndHeight(c, service.QueryType)
+		}
 	}
 
 	if found, err := i.minioClient.BucketExists(ctx, bucket); !found || err != nil {
@@ -215,12 +225,30 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		return c.SendFile("./public/notfound.png")
 	}
 
-	// SVG can carry inline <script>; http.DetectContentType cannot identify it,
-	// so the guard keys off the object-name extension. CSP + sandbox neutralizes
-	// script execution on direct navigation while keeping the SVG viewable when
-	// embedded via <img> (where scripts never run anyway).
-	if strings.HasSuffix(strings.ToLower(objectName), ".svg") {
+	// SVG needs its type declared rather than sniffed. http.DetectContentType
+	// cannot recognise SVG and answers text/plain, which combined with the global
+	// nosniff header meant browsers refused to render it at all: <img src=x.svg>
+	// showed nothing. Declaring image/svg+xml restores that.
+	//
+	// The safety of doing so rests on the CSP below, not on the type being wrong.
+	// SVG can carry inline <script>, and `sandbox` with no allow- flags blocks
+	// script execution on direct navigation, while `default-src 'none'` stops the
+	// document reaching anything external. In an <img> context scripts never run
+	// regardless. nosniff stays on and now means "this really is SVG", which is
+	// the guarantee it is meant to give.
+	isSVG := strings.HasSuffix(strings.ToLower(objectName), ".svg")
+	if isSVG {
 		c.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	}
+
+	// contentTypeFor keeps the sniffed type for everything else. That is what
+	// makes a valid image carrying an appended payload serve as image/*, so it
+	// cannot be reinterpreted as script.
+	contentTypeFor := func(head []byte) string {
+		if isSVG {
+			return "image/svg+xml"
+		}
+		return http.DetectContentType(head)
 	}
 
 	// Resize path: ImageMagick must decode the whole image, so the object is
@@ -239,7 +267,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 			c.Set("Height", strconv.Itoa(int(orjHeight)))
 		}
 
-		c.Set("Content-Type", http.DetectContentType(getByte))
+		c.Set("Content-Type", contentTypeFor(getByte))
 		c.Status(http.StatusOK)
 		return c.Send(i.imageService.ImagickResize(getByte, width, height))
 	}
@@ -265,7 +293,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	}
 	head = head[:n]
 
-	c.Set("Content-Type", http.DetectContentType(head))
+	c.Set("Content-Type", contentTypeFor(head))
 	c.Status(http.StatusOK)
 	return c.SendStream(streamCloser{
 		Reader: io.MultiReader(bytes.NewReader(head), object),

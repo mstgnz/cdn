@@ -72,11 +72,25 @@ func TestUploadEndpoint(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+// TestMetricsEndpoint covers /metrics on both sides of its auth gate. It used to
+// assert a bare 200, which stopped being true in 1.7.0 when the endpoint was
+// closed off; the test only ever passed because it skips when no server is
+// running, so nothing caught the drift.
 func TestMetricsEndpoint(t *testing.T) {
 	requireServer(t)
 	client := &http.Client{Timeout: timeout}
 
-	resp, err := client.Get(baseURL + "/metrics")
+	anonymous, err := client.Get(baseURL + "/metrics")
+	assert.NoError(t, err)
+	defer anonymous.Body.Close()
+	assert.GreaterOrEqual(t, anonymous.StatusCode, 400, "/metrics must not be readable without a token")
+
+	token := requireToken(t)
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/metrics", nil)
+	assert.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
 	assert.NoError(t, err)
 	defer resp.Body.Close()
 

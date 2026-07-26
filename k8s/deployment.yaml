@@ -21,6 +21,11 @@ spec:
           ports:
             - containerPort: 9090
           env:
+            - name: APP_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: app_url
             - name: REDIS_URL
               valueFrom:
                 configMapKeyRef:
@@ -31,6 +36,26 @@ spec:
                 configMapKeyRef:
                   name: cdn-config
                   key: minio_endpoint
+            - name: MINIO_USE_SSL
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: minio_use_ssl
+            - name: DISABLE_DELETE
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: disable_delete
+            - name: DISABLE_UPLOAD
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: disable_upload
+            - name: DISABLE_GET
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: disable_get
             # The general token. The service fails fast at boot without it, so
             # the deployment cannot start unless this is wired.
             - name: TOKEN
@@ -38,6 +63,45 @@ spec:
                 secretKeyRef:
                   name: cdn-secrets
                   key: app_token
+            # Without these the service cannot authenticate to MinIO, which is
+            # every read and write it does.
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: cdn-secrets
+                  key: minio_access_key
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cdn-secrets
+                  key: minio_secret_key
+            # AWS mirroring is opt-in per request and off unless aws_bucket is
+            # set, so these are optional: a MinIO-only cluster can leave the keys
+            # out of the Secret entirely rather than carrying dummy values.
+            - name: AWS_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: aws_region
+                  optional: true
+            - name: AWS_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: cdn-config
+                  key: aws_bucket
+                  optional: true
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cdn-secrets
+                  key: aws_access_key_id
+                  optional: true
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cdn-secrets
+                  key: aws_secret_access_key
+                  optional: true
           volumeMounts:
             # Bucket-scoped tokens. The default TOKENS_FILE is config/tokens.json
             # relative to the working directory, which the image sets to /app.

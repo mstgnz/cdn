@@ -4,9 +4,16 @@ metadata:
   name: cdn-config
   namespace: default
 data:
+  # Public base URL, used to build the link returned by the upload endpoints.
+  # Left at the default it would hand callers a cdn.example.com URL.
+  app_url: "https://cdn.example.com"
   redis_url: "redis://redis-service:6379"
   minio_endpoint: "minio-service:9000"
   minio_use_ssl: "false"
   disable_delete: "false"
   disable_upload: "false"
   disable_get: "false"
+  # AWS is optional. Leave aws_bucket empty to keep uploads MinIO-only; the AWS
+  # credentials in cdn-secrets are then unused.
+  aws_region: ""
+  aws_bucket: ""
