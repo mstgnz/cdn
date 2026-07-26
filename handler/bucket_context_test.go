@@ -1,13 +1,18 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/mstgnz/cdn/pkg/audit"
 	"github.com/mstgnz/cdn/service"
+	"github.com/rs/zerolog"
+	zlog "github.com/rs/zerolog/log"
 )
 
 // runResolveBucket exercises resolveBucket behind a real fiber request, with or
@@ -101,6 +106,35 @@ func TestResolveBucketScopedToken(t *testing.T) {
 				t.Fatalf("got %q, want %q", got, c.want)
 			}
 		})
+	}
+}
+
+// TestResolveBucketEmitsAuditEventOnDenial checks the wiring rather than the
+// audit package itself: a denial has to reach the log, and an allowed request
+// must stay silent so the event keeps meaning something.
+func TestResolveBucketEmitsAuditEventOnDenial(t *testing.T) {
+	scoped := &service.Principal{Scoped: true, Bucket: "tedarik"}
+
+	withCapturedLog := func(requested string) string {
+		var buf bytes.Buffer
+		previous := zlog.Logger
+		zlog.Logger = zerolog.New(&buf)
+		defer func() { zlog.Logger = previous }()
+
+		runResolveBucket(t, scoped, requested)
+		return buf.String()
+	}
+
+	denied := withCapturedLog("sovtajyeri")
+	if !strings.Contains(denied, audit.EventBucketAccessDenied) {
+		t.Errorf("denial did not emit %q: %s", audit.EventBucketAccessDenied, denied)
+	}
+	if !strings.Contains(denied, "tedarik") || !strings.Contains(denied, "sovtajyeri") {
+		t.Errorf("denial entry is missing one of the bucket names: %s", denied)
+	}
+
+	if allowed := withCapturedLog("tedarik"); strings.Contains(allowed, audit.EventBucketAccessDenied) {
+		t.Errorf("an allowed request emitted a denial event: %s", allowed)
 	}
 }
 

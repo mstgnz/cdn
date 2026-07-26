@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Audit logging on the authentication path** (#11). Rejected credentials and
+  denied bucket access were previously invisible: a credential-stuffing run, a
+  misconfigured client and a scoped token probing other tenants all produced an
+  error response and no record. The new `pkg/audit` emits three events at `warn`,
+  each carrying the method, path and the Cloudflare-aware trusted client IP:
+  - `auth.failure` when a credential is rejected, with the reason
+  - `auth.scoped_token_on_operator_route` when a *valid* bucket-scoped token
+    reaches `/aws/*`, `/minio/*`, `/monitor` or `/metrics`, recorded separately
+    because that is almost always a misconfigured client rather than an attack
+  - `auth.bucket_access_denied` when a scoped token names another bucket, with
+    both bucket names, which is what separates a misconfigured client from
+    someone probing for other tenants
+
+  No credential material is logged, in any form. Successful authentication is
+  deliberately not logged: on a CDN that is the hot path and the access log
+  already covers it.
+
 ### Changed
 
 - **ImageMagick is pinned instead of tracking the newest upstream release**

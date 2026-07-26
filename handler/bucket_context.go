@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/mstgnz/cdn/pkg/audit"
 	"github.com/mstgnz/cdn/service"
 )
 
@@ -34,6 +35,11 @@ func resolveBucket(c *fiber.Ctx, requested string) (string, error) {
 	if requested == "" || requested == p.Bucket {
 		return p.Bucket, nil
 	}
+
+	// Logged here rather than in bucketForbidden because this is the only place
+	// that knows both sides of the mismatch, and it covers every write handler
+	// at once.
+	audit.BucketAccessDenied(c, p.Bucket, requested)
 	return "", errBucketForbidden
 }
 

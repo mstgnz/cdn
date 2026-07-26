@@ -21,6 +21,7 @@ import (
 	"gopkg.in/gographics/imagick.v3/imagick"
 
 	"github.com/mstgnz/cdn/handler"
+	"github.com/mstgnz/cdn/pkg/audit"
 	"github.com/mstgnz/cdn/pkg/config"
 	"github.com/mstgnz/cdn/pkg/middleware"
 	"github.com/mstgnz/cdn/pkg/observability"
@@ -202,6 +203,7 @@ func main() {
 		// token is taken from the query string and checked constant-time. This
 		// endpoint streams the same stats as the auth-gated /monitor.
 		if !service.TokenValid(c.Query("token")) {
+			audit.AuthFailure(c, service.ErrInvalidToken.Error())
 			return fiber.ErrUnauthorized
 		}
 		c.Locals("allowed", true)
@@ -339,6 +341,16 @@ func main() {
 // exactly the response they see today.
 func GeneralAuthMiddleware(c *fiber.Ctx) error {
 	if err := service.CheckToken(c); err != nil {
+		// A credential that is a valid bucket-scoped token is recorded as its own
+		// event: reaching an operator route with one is almost always a
+		// misconfigured client, not an attack, and an operator should not have to
+		// tell those apart from a generic "invalid token". The extra resolve only
+		// runs on the failure path.
+		if p, resolveErr := service.ResolvePrincipal(c); resolveErr == nil && p.Scoped {
+			audit.ScopedTokenOnOperatorRoute(c, p.Bucket)
+		} else {
+			audit.AuthFailure(c, err.Error())
+		}
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 	return c.Next()
@@ -350,6 +362,7 @@ func GeneralAuthMiddleware(c *fiber.Ctx) error {
 func BucketAuthMiddleware(c *fiber.Ctx) error {
 	p, err := service.ResolvePrincipal(c)
 	if err != nil {
+		audit.AuthFailure(c, err.Error())
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 	service.StorePrincipal(c, p)
