@@ -77,6 +77,16 @@ type Archive interface {
 	// is not an error anywhere.
 	InScope(bucket string) bool
 
+	// VerifyDestination makes one real call to the archive to find out whether
+	// the credentials work and the destination exists. It answers the question a
+	// list of known placeholder strings cannot: "are these credentials wrong",
+	// as opposed to "were they never filled in".
+	//
+	// Returns ErrArchiveDisabled when there is nothing to check, and
+	// ErrArchiveDestinationPerBucket when the layout has no single destination to
+	// test up front.
+	VerifyDestination(ctx context.Context) error
+
 	// Walk enumerates what the archive holds for a local bucket, translating
 	// archive locations back into local object keys so the caller never has to
 	// know which layout is in use. Returning an error from fn stops the walk.
@@ -101,6 +111,11 @@ var (
 	// this one. Like ErrArchiveDisabled it describes a configuration, not a
 	// fault, and callers must treat it as "skip" rather than report it.
 	ErrArchiveNotInScope = errors.New("archive: bucket is not in the archive scope")
+
+	// ErrArchiveDestinationPerBucket means there is no single destination to
+	// check: under bucket-name parity each local bucket maps to its own S3
+	// bucket, and which ones exist is not knowable before they are used.
+	ErrArchiveDestinationPerBucket = errors.New("archive: destination is per bucket, checked on first use")
 )
 
 type archive struct {
@@ -188,11 +203,36 @@ func archiveConfigured() bool {
 		config.GetEnvOrDefault("AWS_REGION", ""),
 	}
 	for _, v := range required {
-		if strings.TrimSpace(v) == "" {
+		if strings.TrimSpace(v) == "" || isPlaceholderCredential(v) {
 			return false
 		}
 	}
 	return true
+}
+
+// placeholderCredentials are the values .env.example ships. They are not empty,
+// which is the whole problem: a deployment that copied the example and never
+// filled in AWS would otherwise report the archive as enabled at boot and then
+// fail every single upload with an authentication error, sending whoever
+// investigates after an AWS problem that does not exist. Treated as "not
+// configured", which is what they actually mean.
+var placeholderCredentials = map[string]struct{}{
+	"your-aws-key":       {},
+	"your-aws-secret":    {},
+	"your-access-key":    {},
+	"your-secret-key":    {},
+	"your-aws-region":    {},
+	"your-minio-user":    {},
+	"your-minio-passwor": {},
+	"replace_me":         {},
+	"replace-me":         {},
+	"changeme":           {},
+	"change-me":          {},
+}
+
+func isPlaceholderCredential(v string) bool {
+	_, ok := placeholderCredentials[strings.ToLower(strings.TrimSpace(v))]
+	return ok
 }
 
 func (a *archive) Enabled() bool { return a.enabled }
@@ -292,6 +332,24 @@ func (a *archive) Reachable(ctx context.Context, bucket string) error {
 		return fmt.Errorf("archive bucket %q is not reachable: %w", target, err)
 	}
 	return nil
+}
+
+// VerifyDestination proves the credentials work, rather than merely that
+// somebody typed something into them.
+//
+// Deliberately not wired into Enabled(). Boot must not depend on AWS being
+// reachable: a MinIO-only deployment would pay a timeout for it, and a transient
+// outage during a restart would silently switch archiving off for the whole life
+// of the process, which is a far worse failure than a loud log line. So this is
+// something a caller runs and reports; it changes no behaviour.
+func (a *archive) VerifyDestination(ctx context.Context) error {
+	if !a.enabled {
+		return ErrArchiveDisabled
+	}
+	if a.bucket == "" {
+		return ErrArchiveDestinationPerBucket
+	}
+	return a.Reachable(ctx, "")
 }
 
 // ArchiveBucketFor reports where this local bucket's objects are archived, so an

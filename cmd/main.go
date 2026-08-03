@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -131,6 +132,34 @@ func main() {
 	// no warning, nothing to configure. NewArchive reports which state it booted
 	// into, because "is my archive on?" should not require reading code to answer.
 	archive := service.NewArchive(awsService)
+
+	// Prove the credentials work, in the background.
+	//
+	// NewArchive can only tell that the variables were filled in, not that what
+	// they were filled in with is right: a wrong or revoked key looks exactly
+	// like a good one until something uses it. This makes one real call and says
+	// so, which is the difference between finding out at boot and finding out
+	// from a support ticket weeks later.
+	//
+	// Off the startup path on purpose. Boot must not wait on AWS, and a transient
+	// outage during a restart must not be able to turn archiving off for the life
+	// of the process. Nothing here changes behaviour; it only reports.
+	if archive.Enabled() {
+		go func() {
+			checkCtx, cancelCheck := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancelCheck()
+
+			switch err := archive.VerifyDestination(checkCtx); {
+			case err == nil:
+				logger.Info().Msg("archive destination reachable")
+			case errors.Is(err, service.ErrArchiveDestinationPerBucket):
+				logger.Info().Msg("archive destinations are per bucket and will be checked on first use")
+			default:
+				logger.Error().Err(err).
+					Msg("archive is configured but its destination could not be reached; uploads will not be archived until this is fixed")
+			}
+		}()
+	}
 
 	// Retention. Off unless asked for, and reporting-only the first time it is,
 	// because the one thing this job does is delete files. It refuses to start at

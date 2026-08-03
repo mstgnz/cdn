@@ -188,6 +188,13 @@ func (f *fakeArchive) Walk(_ context.Context, bucket string, fn func(string, int
 	return nil
 }
 
+func (f *fakeArchive) VerifyDestination(context.Context) error {
+	if !f.enabled {
+		return ErrArchiveDisabled
+	}
+	return f.reachableErr
+}
+
 func (f *fakeArchive) InScope(bucket string) bool {
 	if !f.enabled {
 		return false

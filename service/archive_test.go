@@ -139,6 +139,123 @@ func TestArchiveDisabledOnPartialCredentials(t *testing.T) {
 	}
 }
 
+// The values .env.example ships are not empty, so a deployment that copied the
+// example and never filled AWS in would otherwise boot reporting the archive as
+// enabled and then fail every upload with an authentication error. That sends
+// whoever investigates after an AWS problem that does not exist.
+func TestArchiveTreatsPlaceholderCredentialsAsUnconfigured(t *testing.T) {
+	cases := []struct {
+		name          string
+		keyID, secret string
+	}{
+		{"both from .env.example", "your-aws-key", "your-aws-secret"},
+		{"key only", "your-aws-key", "unit-test-secret-value"},
+		{"secret only", "unit-test-key-id", "your-aws-secret"},
+		{"changeme", "changeme", "changeme"},
+		{"case and spacing do not help", "  YOUR-AWS-KEY  ", "your-aws-secret"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("ARCHIVE_ENABLED", "true")
+			t.Setenv("AWS_REGION", "eu-central-1")
+			t.Setenv("AWS_ACCESS_KEY_ID", tc.keyID)
+			t.Setenv("AWS_SECRET_ACCESS_KEY", tc.secret)
+
+			if NewArchive(&fakeAws{}).Enabled() {
+				t.Fatal("archive reported enabled on placeholder credentials")
+			}
+		})
+	}
+}
+
+// Anything not on the placeholder list must still be accepted. The check is a
+// list of known example values, not a guess at what a real key looks like, and
+// it must not start rejecting credentials because they seem unusual.
+//
+// The values here are deliberately nothing like an AWS key. A fixture shaped
+// like one trips secret scanners, and a test is a bad place to teach anyone what
+// a credential looks like.
+func TestArchiveAcceptsCredentialsThatAreNotPlaceholders(t *testing.T) {
+	t.Setenv("ARCHIVE_ENABLED", "true")
+	t.Setenv("AWS_REGION", "eu-central-1")
+	t.Setenv("AWS_ACCESS_KEY_ID", "unit-test-key-id")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "unit-test-secret-value")
+	t.Setenv("ARCHIVE_BUCKET", "")
+	t.Setenv("ARCHIVE_ONLY_BUCKETS", "")
+
+	if !NewArchive(&fakeAws{}).Enabled() {
+		t.Fatal("archive refused credentials that are not placeholders")
+	}
+}
+
+// The placeholder list answers "were these ever filled in". It cannot answer
+// "are they right", and nothing that only compares strings can. VerifyDestination
+// is the part that makes a real call, and it is separate from Enabled() on
+// purpose: boot must not wait on AWS, and a transient outage during a restart
+// must not be able to switch archiving off for the life of the process.
+func TestVerifyDestination(t *testing.T) {
+	t.Run("reports the destination reachable", func(t *testing.T) {
+		enableArchiveEnv(t)
+		t.Setenv("ARCHIVE_BUCKET", "cold-store")
+		f := &fakeAws{}
+
+		if err := NewArchive(f).VerifyDestination(context.Background()); err != nil {
+			t.Fatalf("VerifyDestination: %v", err)
+		}
+		if f.headBucket != "cold-store" {
+			t.Errorf("checked %q, want cold-store", f.headBucket)
+		}
+	})
+
+	// The case the placeholder list cannot catch: credentials that were filled
+	// in with something wrong. Only a real call surfaces this.
+	t.Run("surfaces credentials that are filled in but wrong", func(t *testing.T) {
+		enableArchiveEnv(t)
+		t.Setenv("ARCHIVE_BUCKET", "cold-store")
+		f := &fakeAws{headBucketErr: errors.New("InvalidAccessKeyId")}
+
+		a := NewArchive(f)
+		if !a.Enabled() {
+			t.Fatal("archive should still consider itself configured")
+		}
+
+		err := a.VerifyDestination(context.Background())
+		if err == nil {
+			t.Fatal("a bad credential passed verification")
+		}
+		if !strings.Contains(err.Error(), "InvalidAccessKeyId") {
+			t.Errorf("the underlying cause was lost: %v", err)
+		}
+	})
+
+	// Under bucket parity there is no single destination to test up front, and
+	// saying so is better than testing an arbitrary one and reporting on it.
+	t.Run("bucket parity has no single destination", func(t *testing.T) {
+		enableArchiveEnv(t)
+		t.Setenv("ARCHIVE_BUCKET", "")
+		f := &fakeAws{}
+
+		err := NewArchive(f).VerifyDestination(context.Background())
+		if !errors.Is(err, ErrArchiveDestinationPerBucket) {
+			t.Fatalf("want ErrArchiveDestinationPerBucket, got %v", err)
+		}
+		if f.headBucket != "" {
+			t.Errorf("checked bucket %q when there was none to check", f.headBucket)
+		}
+	})
+
+	t.Run("nothing to verify when disabled", func(t *testing.T) {
+		t.Setenv("AWS_ACCESS_KEY_ID", "")
+		t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+		t.Setenv("AWS_REGION", "")
+
+		if err := NewArchive(&fakeAws{}).VerifyDestination(context.Background()); !errors.Is(err, ErrArchiveDisabled) {
+			t.Fatalf("want ErrArchiveDisabled, got %v", err)
+		}
+	})
+}
+
 // ARCHIVE_ENABLED=false is the escape hatch for a deployment that has AWS
 // credentials for some other purpose and does not want them used for this. The
 // switch is checked before the credentials, so it has to win over a fully
