@@ -34,6 +34,31 @@ go test ./handler -v
 go test -race ./handler/... ./service/...
 ```
 
+### Integration tests
+
+These run against a live stack and skip cleanly when one is not there, so
+`go test ./...` stays green without them.
+
+```bash
+docker compose up -d
+export CDN_TEST_TOKEN=$(grep '^TOKEN=' .env | cut -d= -f2-)
+go test ./test/integration/... -count=1
+```
+
+Two things about the environment they need:
+
+- **Raise the rate limits.** The suite uploads far more often in a minute than a
+  production deployment should, so the shipped `UPLOAD_RATE_LIMIT=50` turns it
+  into a wall of `429`s that looks like a product failure. Set both `RATE_LIMIT`
+  and `UPLOAD_RATE_LIMIT` high in `.env` and recreate the API containers.
+- **Turn the archive off** (`ARCHIVE_ENABLED=false`) unless you specifically mean
+  to exercise it. With real AWS credentials in `.env` an ordinary test run will
+  otherwise make real calls against a real account.
+
+`TestBucketScopedTokenIsolation` additionally needs `CDN_TEST_BUCKET` and
+`CDN_TEST_BUCKET_TOKEN`, from an entry in `config/tokens.json`; it skips without
+them.
+
 Run with coverage:
 
 ```bash

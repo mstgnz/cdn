@@ -1,5 +1,10 @@
 # AWS Glacier CLI Usage Guide
 
+> **This is not the cold storage archive.** It covers the legacy Glacier **Vault**
+> API behind the `/aws/glacier/*` endpoints, where retrieval is a job measured in
+> hours. For the feature that mirrors uploads to S3 and keeps their URLs working
+> after the local copy is removed, see [Cold Storage Archive](./archive.md).
+
 This guide explains how to retrieve and download files from AWS Glacier using AWS CLI commands, as an alternative to the REST API endpoints.
 
 ## Prerequisites

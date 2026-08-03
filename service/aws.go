@@ -36,6 +36,8 @@ type AwsService interface {
 	GlacierDownloadToLocal(vaultName, jobId, localPath string) error
 	S3PutObject(ctx context.Context, bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error)
 	S3HeadObject(ctx context.Context, bucketName, objectName string) (*s3.HeadObjectOutput, error)
+	S3HeadBucket(ctx context.Context, bucketName string) error
+	S3ListObjects(ctx context.Context, bucketName, prefix string, fn func(key string, size int64) error) error
 	S3GetObject(ctx context.Context, bucketName, objectName string) (*s3.GetObjectOutput, error)
 	ListBuckets() ([]s3types.Bucket, error)
 	BucketExists(bucketName string) bool
@@ -98,6 +100,52 @@ func (as *awsService) S3HeadObject(ctx context.Context, bucketName, objectName s
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(objectName),
 	})
+}
+
+// S3HeadBucket reports whether the bucket exists and this account can reach it.
+//
+// Deliberately not ListBuckets-and-compare, which is what BucketExists does: that
+// needs s3:ListAllMyBuckets across the whole account, a permission a properly
+// scoped archive credential has no reason to hold. HeadBucket only needs access
+// to the one bucket being asked about.
+func (as *awsService) S3HeadBucket(ctx context.Context, bucketName string) error {
+	client := s3.NewFromConfig(as.cfg)
+	_, err := client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucketName)})
+	return err
+}
+
+// S3ListObjects walks a prefix, calling fn once per object.
+//
+// Callback rather than a returned slice because an archive bucket can hold tens
+// of millions of keys: materialising that would cost gigabytes and delay the
+// first result until the last page had been fetched. Returning an error from fn
+// stops the walk and surfaces here.
+func (as *awsService) S3ListObjects(ctx context.Context, bucketName, prefix string, fn func(key string, size int64) error) error {
+	client := s3.NewFromConfig(as.cfg)
+	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucketName),
+		Prefix: aws.String(prefix),
+	})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return err
+		}
+		for _, obj := range page.Contents {
+			if obj.Key == nil {
+				continue
+			}
+			var size int64
+			if obj.Size != nil {
+				size = *obj.Size
+			}
+			if err := fn(*obj.Key, size); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // S3GetObject opens an archived object for reading. The caller owns the returned

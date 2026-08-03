@@ -1,6 +1,20 @@
 # AWS Glacier File Retrieval Guide
 
-This project now supports retrieving and downloading files from AWS Glacier with both synchronous and asynchronous download options.
+> **This is not the cold storage archive.** Two unrelated things share the word
+> Glacier here.
+>
+> The `/aws/glacier/*` endpoints below drive the legacy Glacier **Vault** API,
+> where objects are addressed by an opaque `archiveId` you must store yourself
+> and retrieval is a job that takes hours. They are kept for deployments already
+> using them.
+>
+> If you are looking for the feature that mirrors uploads to S3 and serves an
+> object from cold storage at the same URL after it has been removed locally,
+> that is [Cold Storage Archive](./archive.md). It uses ordinary S3 with the
+> Glacier Instant Retrieval class, is addressed by the same bucket and key as
+> MinIO, and needs no job and no waiting. The two do not interact.
+
+This project supports retrieving and downloading files from AWS Glacier with both synchronous and asynchronous download options.
 
 ## How Does Glacier Work?
 

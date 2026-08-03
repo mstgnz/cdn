@@ -2,8 +2,9 @@ package service
 
 import (
 	"context"
-	"errors"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -11,16 +12,6 @@ import (
 	"github.com/mstgnz/cdn/pkg/observability"
 	"github.com/rs/zerolog"
 )
-
-// ObjectStore is the slice of MinIO the retention job uses. It exists so the
-// deletion logic can be tested without a running MinIO: *minio.Client satisfies
-// it as-is, and so does a fake. Given that this is the one component in the
-// service allowed to delete user data, "cannot be tested" was not an option.
-type ObjectStore interface {
-	ListBuckets(ctx context.Context) ([]minio.BucketInfo, error)
-	ListObjects(ctx context.Context, bucket string, opts minio.ListObjectsOptions) <-chan minio.ObjectInfo
-	RemoveObject(ctx context.Context, bucket, object string, opts minio.RemoveObjectOptions) error
-}
 
 // RetentionStats is the outcome of one pass, both for the log line and for tests
 // to assert against.
@@ -49,6 +40,7 @@ type RetentionStats struct {
 type Retention struct {
 	store   ObjectStore
 	archive Archive
+	tiering *Tiering
 	logger  zerolog.Logger
 
 	enabled  bool
@@ -84,6 +76,7 @@ func NewRetention(store ObjectStore, archive Archive) *Retention {
 	return &Retention{
 		store:    store,
 		archive:  archive,
+		tiering:  NewTiering(store, archive),
 		logger:   observability.Logger(),
 		enabled:  config.GetEnvAsBoolOrDefault("RETENTION_ENABLED", false),
 		dryRun:   config.GetEnvAsBoolOrDefault("RETENTION_DRY_RUN", true),
@@ -163,116 +156,172 @@ func (r *Retention) RunOnce(ctx context.Context, now time.Time) (RetentionStats,
 	}
 
 	cutoff := now.Add(-r.window)
+	var counters retentionCounters
+
+	// Listing stays on this goroutine and the per-object work fans out.
+	//
+	// The work is almost entirely a network round trip: every eligible object
+	// costs one HeadObject against the archive before it can be deleted. Done one
+	// at a time, a store of a few million objects takes days per pass, which is
+	// not a slow sweep so much as a sweep that never finishes. The listing itself
+	// is a cheap local stream and is left sequential; the cap keeps the fan-out
+	// from turning a routine sweep into a denial of service against the archive.
+	workers := config.GetEnvAsIntOrDefault("RETENTION_MAX_CONCURRENT", 8)
+	if workers < 1 {
+		workers = 1
+	}
 
 	for _, bucket := range buckets {
-		select {
-		case <-ctx.Done():
-			return stats, ctx.Err()
-		default:
+		if ctx.Err() != nil {
+			return counters.snapshot(), ctx.Err()
 		}
 
-		objects := r.store.ListObjects(ctx, bucket, minio.ListObjectsOptions{Recursive: true})
-		for obj := range objects {
+		queue := make(chan minio.ObjectInfo, workers*4)
+		var wg sync.WaitGroup
+
+		for i := 0; i < workers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for obj := range queue {
+					r.process(ctx, bucket, obj, &counters)
+				}
+			}()
+		}
+
+		for obj := range r.store.ListObjects(ctx, bucket, minio.ListObjectsOptions{Recursive: true}) {
 			if obj.Err != nil {
-				stats.Errors++
+				counters.errors.Add(1)
 				r.logger.Warn().Err(obj.Err).Str("bucket", bucket).Msg("retention: listing failed")
 				continue
 			}
 
-			stats.Scanned++
+			counters.scanned.Add(1)
 			if !obj.LastModified.Before(cutoff) {
 				continue
 			}
-			stats.Eligible++
-
-			if !r.verifyArchived(ctx, bucket, obj, &stats) {
-				continue
-			}
-
-			if r.dryRun {
-				r.logger.Debug().
-					Str("bucket", bucket).
-					Str("object", obj.Key).
-					Msg("retention: would delete")
-				stats.Deleted++
-				stats.BytesFreed += obj.Size
-				continue
-			}
-
-			if err := r.store.RemoveObject(ctx, bucket, obj.Key, minio.RemoveObjectOptions{}); err != nil {
-				stats.Errors++
-				r.logger.Error().Err(err).
-					Str("bucket", bucket).
-					Str("object", obj.Key).
-					Msg("retention: delete failed")
-				continue
-			}
-
-			stats.Deleted++
-			stats.BytesFreed += obj.Size
+			counters.eligible.Add(1)
+			queue <- obj
 		}
+
+		close(queue)
+		wg.Wait()
 	}
 
-	return stats, nil
+	return counters.snapshot(), nil
 }
 
-// verifyArchived is the gate every delete passes through. It answers "is this
-// exact object, at this exact size, already in the archive?" and nothing else.
-//
-// The size comparison is not redundant with existence. The first version of the
-// archive upload handed S3 a reader that the MinIO upload had already drained,
-// so the archive filled up with zero-byte objects that existed by every other
-// measure. Comparing sizes is what turns "there is something under that key"
-// into "the object is safe to delete locally".
-func (r *Retention) verifyArchived(ctx context.Context, bucket string, obj minio.ObjectInfo, stats *RetentionStats) bool {
-	archivedSize, err := r.archive.Stat(ctx, bucket, obj.Key)
-	if err != nil {
-		if errors.Is(err, ErrArchiveNotFound) {
-			stats.NotArchived++
-			r.logger.Warn().
-				Str("bucket", bucket).
-				Str("object", obj.Key).
-				Msg("retention: keeping object, no archived copy")
-			return false
-		}
+// process handles one eligible object: verify, then delete if verified.
+func (r *Retention) process(ctx context.Context, bucket string, obj minio.ObjectInfo, c *retentionCounters) {
+	if !r.verifyArchived(ctx, bucket, obj, c) {
+		return
+	}
 
-		stats.Errors++
+	if r.dryRun {
+		r.logger.Debug().
+			Str("bucket", bucket).
+			Str("object", obj.Key).
+			Msg("retention: would delete")
+		c.deleted.Add(1)
+		c.bytesFreed.Add(obj.Size)
+		return
+	}
+
+	if err := r.store.RemoveObject(ctx, bucket, obj.Key, minio.RemoveObjectOptions{}); err != nil {
+		c.errors.Add(1)
 		r.logger.Error().Err(err).
 			Str("bucket", bucket).
 			Str("object", obj.Key).
-			Msg("retention: keeping object, archive check failed")
-		return false
+			Msg("retention: delete failed")
+		return
 	}
 
-	if archivedSize != obj.Size {
-		stats.SizeMismatch++
+	c.deleted.Add(1)
+	c.bytesFreed.Add(obj.Size)
+}
+
+// retentionCounters is the concurrent form of RetentionStats. The exported type
+// stays a plain struct so callers and tests keep reading ordinary fields.
+type retentionCounters struct {
+	scanned      atomic.Int64
+	eligible     atomic.Int64
+	deleted      atomic.Int64
+	bytesFreed   atomic.Int64
+	notArchived  atomic.Int64
+	sizeMismatch atomic.Int64
+	errors       atomic.Int64
+}
+
+func (c *retentionCounters) snapshot() RetentionStats {
+	return RetentionStats{
+		Scanned:      int(c.scanned.Load()),
+		Eligible:     int(c.eligible.Load()),
+		Deleted:      int(c.deleted.Load()),
+		BytesFreed:   c.bytesFreed.Load(),
+		NotArchived:  int(c.notArchived.Load()),
+		SizeMismatch: int(c.sizeMismatch.Load()),
+		Errors:       int(c.errors.Load()),
+	}
+}
+
+// verifyArchived is the gate every delete passes through. The decision itself
+// lives in Tiering so that the scheduled sweep and the on-demand archive
+// endpoint cannot drift apart on the one rule that protects the data; what is
+// left here is turning the answer into this job's counters and log lines.
+func (r *Retention) verifyArchived(ctx context.Context, bucket string, obj minio.ObjectInfo, c *retentionCounters) bool {
+	ok, reason, err := r.tiering.VerifyArchived(ctx, bucket, obj.Key, obj.Size)
+	if ok {
+		return true
+	}
+
+	switch reason {
+	case VerifyNotArchived:
+		c.notArchived.Add(1)
+		r.logger.Warn().
+			Str("bucket", bucket).
+			Str("object", obj.Key).
+			Msg("retention: keeping object, no archived copy")
+	case VerifySizeMismatch:
+		c.sizeMismatch.Add(1)
 		r.logger.Warn().
 			Str("bucket", bucket).
 			Str("object", obj.Key).
 			Int64("local_size", obj.Size).
-			Int64("archived_size", archivedSize).
 			Msg("retention: keeping object, archived copy differs in size")
-		return false
+	default:
+		c.errors.Add(1)
+		r.logger.Error().Err(err).
+			Str("bucket", bucket).
+			Str("object", obj.Key).
+			Msg("retention: keeping object, archive check failed")
 	}
 
-	return true
+	return false
 }
 
 // targetBuckets resolves the configured bucket list, defaulting to everything
 // MinIO knows about.
 func (r *Retention) targetBuckets(ctx context.Context) ([]string, error) {
-	if len(r.buckets) > 0 {
-		return r.buckets, nil
+	candidates := r.buckets
+	if len(candidates) == 0 {
+		infos, err := r.store.ListBuckets(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, b := range infos {
+			candidates = append(candidates, b.Name)
+		}
 	}
 
-	infos, err := r.store.ListBuckets(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	names := make([]string, 0, len(infos))
-	for _, b := range infos {
-		names = append(names, b.Name)
+	// A bucket outside the archive scope has nowhere for its objects to go, so
+	// sweeping it could only ever produce "keeping object, no archived copy" for
+	// every object in it. Drop it here rather than walking millions of objects to
+	// reach a conclusion already known.
+	names := make([]string, 0, len(candidates))
+	for _, b := range candidates {
+		if r.archive.InScope(b) {
+			names = append(names, b)
+		}
 	}
 	return names, nil
 }

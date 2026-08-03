@@ -58,9 +58,22 @@ services:
     image: minio/minio
     container_name: cdn-minio
     restart: always
+    # Bound to the loopback interface, not 0.0.0.0.
+    #
+    # Nothing in this stack needs these ports published at all: the API replicas
+    # reach MinIO as cdn-minio:9000 over the compose network. They are exposed
+    # for the operator, to point mc at or to put a TLS-terminating proxy in front
+    # of the console. Publishing them on every interface instead hands the
+    # internet an S3 endpoint holding every object and an admin console, both
+    # guarded by nothing but MINIO_ROOT_PASSWORD.
+    #
+    # That is worth spelling out because a host firewall does not save you here:
+    # Docker writes its own iptables rules and a published port bypasses ufw.
+    #
+    # Override MINIO_BIND to 0.0.0.0 only if you genuinely mean to.
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "${MINIO_BIND:-127.0.0.1}:9000:9000"
+      - "${MINIO_BIND:-127.0.0.1}:9001:9001"
     volumes:
       - minio:/var/lib/minio
     environment:
@@ -70,11 +83,43 @@ services:
     networks:
       - cdn
 
+  # MinIO client, for operating on buckets from the host without installing
+  # anything or reaching for `docker run --network`. The MinIO server image does
+  # not ship mc, and adding it there would mean rebuilding a pinned image.
+  #
+  # Behind the "tools" profile so it does not start with the stack:
+  #
+  #   docker compose --profile tools up -d mc
+  #   docker exec cdn-mc mc ls local
+  #   docker exec cdn-mc mc du local/sovtajyeri
+  #
+  # That is a one-time command; the restart policy brings it back afterwards.
+  mc:
+    image: minio/mc:${MC_VERSION:-latest}
+    container_name: cdn-mc
+    profiles: ["tools"]
+    restart: unless-stopped
+    # The image's entrypoint is mc itself, which would exit immediately. Idling
+    # instead keeps a container around to exec into.
+    entrypoint: ["/bin/sh", "-c", "sleep infinity"]
+    environment:
+      # Configures the "local" alias from the environment, so no credentials are
+      # written to a config file inside the container. A password containing
+      # @ : / ? or # has to be percent-encoded here, since this is a URL.
+      MC_HOST_local: "http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@cdn-minio:9000"
+    depends_on:
+      - minio
+    networks:
+      - cdn
+
   redis:
     image: redis:7.2-alpine
     container_name: cdn-redis
+    # Loopback for the same reason as MinIO, and more urgently: this Redis has no
+    # password, so anyone who can reach the port can read the rate-limit state and
+    # the cache, and write to both.
     ports:
-      - "6379:6379"
+      - "${REDIS_BIND:-127.0.0.1}:6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes

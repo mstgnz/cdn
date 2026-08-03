@@ -30,12 +30,13 @@ import (
 )
 
 var (
-	awsService   service.AwsService
-	minioClient  *minio.Client
-	imageHandler handler.Image
-	awsHandler   handler.AwsHandler
-	minioHandler handler.MinioHandler
-	wsHandler    handler.WebSocketHandler
+	awsService     service.AwsService
+	minioClient    *minio.Client
+	imageHandler   handler.Image
+	awsHandler     handler.AwsHandler
+	minioHandler   handler.MinioHandler
+	wsHandler      handler.WebSocketHandler
+	archiveHandler handler.ArchiveHandler
 )
 
 func main() {
@@ -125,23 +126,25 @@ func main() {
 	}
 	statsService := service.NewStatsService()
 
-	// Cold-storage archive. Absent AWS credentials this reports itself disabled
-	// and every archive call becomes a no-op, which is the expected state for a
-	// MinIO-only deployment: no error, no warning, nothing to configure. Said out
-	// loud at boot either way, because "is my archive on?" should not require
-	// reading code to answer.
+	// Cold-storage archive. Without AWS credentials every archive call becomes a
+	// no-op, which is the expected state for a MinIO-only deployment: no error,
+	// no warning, nothing to configure. NewArchive reports which state it booted
+	// into, because "is my archive on?" should not require reading code to answer.
 	archive := service.NewArchive(awsService)
-	if archive.Enabled() {
-		logger.Info().Msg("archive enabled: uploads are mirrored to cold storage")
-	} else {
-		logger.Info().Msg("archive disabled: no AWS credentials configured, serving from MinIO only")
-	}
 
 	// Retention. Off unless asked for, and reporting-only the first time it is,
 	// because the one thing this job does is delete files. It refuses to start at
 	// all without the archive, since without it there is nothing to fall back to.
-	retention := service.NewRetention(minioClient, archive)
+	objectStore := service.MinioStore{Client: minioClient}
+	retention := service.NewRetention(objectStore, archive)
 	retention.Start(ctx)
+
+	// On-demand tiering, driven by the applications that own the content. It is
+	// the only workable trigger on a CDN that objects were migrated into: the
+	// stored timestamps describe the migration, not the content, so age tells the
+	// server nothing about when a file stopped being needed locally.
+	tiering := service.NewTiering(objectStore, archive)
+	archiveHandler = handler.NewArchiveHandler(tiering)
 
 	// Initialize cache service
 	cacheService, err := service.NewCacheService()
@@ -285,6 +288,14 @@ func main() {
 	// (decode + resize), so it must not be an unauthenticated compute/attack
 	// surface like the other write endpoints.
 	app.Post("/resize", BucketAuthMiddleware, imageHandler.ResizeImage)
+
+	// On-demand archiving. Registered before the /:bucket/* wildcard so it is not
+	// shadowed by it, and behind BucketAuthMiddleware so a scoped token can move
+	// its own bucket's objects to cold storage but nobody else's.
+	//
+	// Not gated by DISABLE_DELETE: the object stays readable at the same URL
+	// afterwards, so this is a move between tiers rather than a deletion.
+	app.Post("/archive", BucketAuthMiddleware, archiveHandler.ArchiveObjects)
 
 	// Minio
 	if !disableGet {

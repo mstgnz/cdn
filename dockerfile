@@ -75,6 +75,15 @@ COPY . .
 RUN go mod download
 RUN CGO_ENABLED=1 GOOS=linux go build -o main ./cmd/main.go
 
+# The backfill tool ships alongside the server rather than as its own image: it
+# links the same service package, so it needs the same ImageMagick runtime, and
+# an operator running it wants it inside the deployment it is backfilling.
+RUN CGO_ENABLED=1 GOOS=linux go build -o backfill ./cmd/backfill
+
+# restore is backfill's inverse, and it ships for the same reason a fire exit
+# does: adopting cold storage must not be a one-way door.
+RUN CGO_ENABLED=1 GOOS=linux go build -o restore ./cmd/restore
+
 # Stage 2: the image that ships.
 #
 # bullseye-slim and not a newer Debian on purpose: the binary and the ImageMagick
@@ -162,6 +171,8 @@ ENV MALLOC_ARENA_MAX=2
 
 WORKDIR /app
 COPY --from=build /app/main ./main
+COPY --from=build /app/backfill ./backfill
+COPY --from=build /app/restore ./restore
 COPY --from=build /app/public ./public
 
 EXPOSE 9090

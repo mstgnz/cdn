@@ -4,6 +4,30 @@ MinIO Client (mc) is a command-line tool for MinIO and S3-compatible storage ser
 
 ## Installation
 
+### With this project's Compose stack (no install)
+
+The stack ships an `mc` container behind the `tools` profile, already pointed at
+the local MinIO. The MinIO **server** image does not include `mc`, and adding it
+there would mean rebuilding a pinned image, so it is a separate service.
+
+```bash
+docker compose --profile tools up -d mc
+
+docker exec cdn-mc mc ls local
+docker exec cdn-mc mc du local/photos
+docker exec cdn-mc mc ls --recursive --summarize local/photos
+```
+
+One command starts it; the restart policy keeps it around afterwards. The `local`
+alias is configured from `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` through the
+`MC_HOST_local` environment variable, so no credentials are written to a config
+file inside the container. A password containing `@`, `:`, `/`, `?` or `#` has to
+be percent-encoded there, since that variable is a URL.
+
+Pin the client with `MC_VERSION` if you run an older MinIO server: a newer `mc`
+is fine for `ls`, `du` and `cp`, but `mc admin` commands are sensitive to the
+server version.
+
 ### macOS (Homebrew)
 
 ```bash

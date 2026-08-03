@@ -274,11 +274,42 @@ resources:
 
 ## Security Considerations
 
-1. SSL/TLS Configuration
-2. Rate Limiting (already implemented)
-3. Authentication
-4. Secure Environment Variables
-5. Regular Security Updates
+**Do not publish MinIO or Redis on a public interface.** Since v1.10.0
+`docker-compose.yml` binds `9000`, `9001` and `6379` to `127.0.0.1`. Nothing in
+the stack needs them published: the API replicas reach both over the compose
+network. Publishing them exposes an S3 endpoint holding every object, an admin
+console, and a password-less Redis. A host firewall does not cover this, because
+Docker writes its own iptables rules and a published port bypasses `ufw`. Verify
+from *outside* the host:
+
+```bash
+nc -zv <public-ip> 9000 9001 6379   # all three should fail to connect
+```
+
+**Put the MinIO console behind more than its own login** if you expose it through
+a proxy. An `allow`/`deny` block on the office addresses costs nothing and takes
+an admin UI off the public internet.
+
+**`TOKEN` must be at least 32 characters** and is checked at boot. Generate one
+with `openssl rand -hex 32`. Bucket-scoped tokens in `config/tokens.json` are
+held to the same floor.
+
+**In the reverse proxy in front of this service**, do not set
+`proxy_ignore_headers Cache-Control`. The service marks a degraded resize
+response `no-store`, and ignoring that caches a full-size image under a `?width=`
+URL. Be aware too that caching there means a deleted object keeps being served
+until its entry expires; the open source nginx build has no purge.
+
+**Uploads are allowlisted by extension, by MIME type and by content signature.**
+See [Accepted File Types](./api.md#accepted-file-types). Turn validation off
+(`VALIDATE_FILE=false`) only where every caller is trusted.
+
+**Rotate credentials that were ever reachable from outside**, including
+`MINIO_ROOT_PASSWORD`, rather than assuming nobody looked.
+
+Then the routine items: TLS termination, keeping the images patched, and
+reviewing `docker compose logs api` for the `auth.failure` and
+`auth.bucket_access_denied` audit events.
 
 ## Backup and Recovery
 

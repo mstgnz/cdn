@@ -5,11 +5,39 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/mstgnz/cdn/pkg/config"
+	"github.com/mstgnz/cdn/pkg/observability"
 )
+
+// Named once so operator-facing messages can quote the variable someone would
+// actually edit, without the name drifting from the check.
+const (
+	envArchiveEnabled = "ARCHIVE_ENABLED"
+
+	// envArchiveOnlyBuckets is deliberately not "ARCHIVE_BUCKETS": that is one
+	// letter away from ARCHIVE_BUCKET, which sets the destination, and a typo
+	// between the two would configure something entirely different without
+	// looking wrong.
+	envArchiveOnlyBuckets = "ARCHIVE_ONLY_BUCKETS"
+)
+
+// parseBucketScope reads a comma-separated allowlist. Empty means no limit.
+func parseBucketScope(raw string) map[string]struct{} {
+	scope := map[string]struct{}{}
+	for _, b := range strings.Split(raw, ",") {
+		if b = strings.TrimSpace(b); b != "" {
+			scope[b] = struct{}{}
+		}
+	}
+	if len(scope) == 0 {
+		return nil
+	}
+	return scope
+}
 
 // Archive is the cold half of the storage story: MinIO holds what is recent,
 // the archive holds everything, and the two are addressed by the same
@@ -35,6 +63,27 @@ type Archive interface {
 	// Stat returns the archived object's size without transferring it. This is
 	// the proof the retention job requires before deleting the MinIO copy.
 	Stat(ctx context.Context, bucket, object string) (int64, error)
+
+	// Reachable reports whether objects from this local bucket have somewhere to
+	// go: it resolves the destination and checks it exists and is writable.
+	//
+	// Callers use it to fail once instead of per object. Nothing creates the
+	// destination automatically, so without this a misconfigured deployment
+	// discovers the problem one failed upload at a time, several million times.
+	Reachable(ctx context.Context, bucket string) error
+
+	// InScope reports whether this bucket is archived at all. Callers use it to
+	// skip work rather than to handle a rejection: a bucket left out of the scope
+	// is not an error anywhere.
+	InScope(bucket string) bool
+
+	// Walk enumerates what the archive holds for a local bucket, translating
+	// archive locations back into local object keys so the caller never has to
+	// know which layout is in use. Returning an error from fn stops the walk.
+	//
+	// Not gated by scope, for the same reason reads are not: the case this exists
+	// for includes pulling back a bucket that was removed from the scope.
+	Walk(ctx context.Context, bucket string, fn func(key string, size int64) error) error
 }
 
 var (
@@ -47,6 +96,11 @@ var (
 	// ErrArchiveNotFound means the object has no archived copy. For the retention
 	// job this is the signal to keep the MinIO copy rather than delete it.
 	ErrArchiveNotFound = errors.New("archive: object not found")
+
+	// ErrArchiveNotInScope means the deployment archives some buckets but not
+	// this one. Like ErrArchiveDisabled it describes a configuration, not a
+	// fault, and callers must treat it as "skip" rather than report it.
+	ErrArchiveNotInScope = errors.New("archive: bucket is not in the archive scope")
 )
 
 type archive struct {
@@ -57,6 +111,12 @@ type archive struct {
 	// bucket, when set, collapses every MinIO bucket into one archive bucket and
 	// distinguishes them by key prefix instead. Empty means bucket-name parity.
 	bucket string
+
+	// only limits which local buckets are archived. Nil means every bucket, which
+	// is the default: a deployment that turns the archive on almost always wants
+	// all of its data covered, and an opt-in list would leave buckets silently
+	// unprotected until someone remembered to add them.
+	only map[string]struct{}
 }
 
 // NewArchive builds the archive from the environment. The enabled decision is
@@ -65,11 +125,48 @@ type archive struct {
 // let a transient credential problem silently drop objects that the retention
 // job later expects to find.
 func NewArchive(aws AwsService) Archive {
-	return &archive{
+	a := &archive{
 		aws:     aws,
 		enabled: archiveConfigured(),
 		bucket:  strings.TrimSpace(config.GetEnvOrDefault("ARCHIVE_BUCKET", "")),
+		only:    parseBucketScope(config.GetEnvOrDefault(envArchiveOnlyBuckets, "")),
 	}
+
+	// Say which state we booted into, and when disabled, say which of the two
+	// reasons it was. They are not the same thing to an operator: switched off is
+	// a decision someone made, missing credentials may well be an oversight, and
+	// a single message covering both sends people to check the wrong thing.
+	log := observability.Logger()
+	switch {
+	case a.enabled:
+		ev := log.Info().Str("layout", a.layout())
+		if a.only == nil {
+			ev = ev.Str("scope", "all buckets")
+		} else {
+			scoped := make([]string, 0, len(a.only))
+			for b := range a.only {
+				scoped = append(scoped, b)
+			}
+			sort.Strings(scoped)
+			ev = ev.Strs("scope", scoped)
+		}
+		ev.Msg("archive enabled: uploads are mirrored to cold storage")
+	case !config.GetEnvAsBoolOrDefault(envArchiveEnabled, true):
+		log.Info().Msg("archive disabled by " + envArchiveEnabled + ": serving from MinIO only")
+	default:
+		log.Info().Msg("archive disabled: AWS credentials not configured, serving from MinIO only")
+	}
+
+	return a
+}
+
+// layout names the key mapping in use, so the boot log answers "where do my
+// objects actually land" without a trip to the documentation.
+func (a *archive) layout() string {
+	if a.bucket != "" {
+		return "single bucket " + a.bucket + " with <minio-bucket>/ prefix"
+	}
+	return "one S3 bucket per MinIO bucket, matching names"
 }
 
 // archiveConfigured reports whether the environment describes a usable archive.
@@ -79,8 +176,9 @@ func NewArchive(aws AwsService) Archive {
 // would pay a timeout for it on every boot. Nothing here logs the values.
 func archiveConfigured() bool {
 	// An explicit off-switch, so a deployment that has AWS credentials for some
-	// other reason can still decline to archive.
-	if !config.GetEnvAsBoolOrDefault("ARCHIVE_ENABLED", true) {
+	// other reason can still decline to archive. Checked before the credentials
+	// so that it wins over them rather than merely agreeing with them.
+	if !config.GetEnvAsBoolOrDefault(envArchiveEnabled, true) {
 		return false
 	}
 
@@ -99,13 +197,37 @@ func archiveConfigured() bool {
 
 func (a *archive) Enabled() bool { return a.enabled }
 
+// InScope reports whether this bucket is archived.
+//
+// Note what this does *not* gate: reading. Open and Stat answer for any bucket,
+// deliberately. Scope decides what gets written to the archive, never what can
+// be read back out of it, because narrowing the scope must not be able to break
+// URLs for objects archived and evicted while the bucket was still included. The
+// cost of that choice is one failed archive lookup per miss in an unarchived
+// bucket, which the 404 caching in front of this absorbs.
+func (a *archive) InScope(bucket string) bool {
+	if !a.enabled {
+		return false
+	}
+	if a.only == nil {
+		return true
+	}
+	_, ok := a.only[bucket]
+	return ok
+}
+
 // resolve maps a MinIO location onto its archive location.
 //
-// The two layouts exist because they suit different scales. Bucket-name parity
-// is the default and needs no configuration, but it means one S3 bucket, one
-// lifecycle rule and one IAM statement per MinIO bucket. Setting ARCHIVE_BUCKET
-// puts everything in one bucket under a "<minio-bucket>/" prefix, which is far
-// easier to administer once there are more than a handful.
+// Two layouts, both supported, neither enforced. Bucket-name parity is the
+// default because it needs no configuration and mirrors MinIO exactly. Setting
+// ARCHIVE_BUCKET puts everything in one bucket under a "<minio-bucket>/" prefix,
+// and is the recommended option: S3 bucket names are unique across every AWS
+// account, while MinIO's are only unique locally, so an ordinary name cannot
+// always be recreated on the S3 side. docs/archive.md has the full argument.
+//
+// Whichever is chosen, it has to stay chosen. This reads the configuration as it
+// is now, so a deployment that switches layouts leaves everything already
+// archived at keys nothing will ask for again.
 func (a *archive) resolve(bucket, object string) (string, string) {
 	if a.bucket != "" {
 		return a.bucket, bucket + "/" + object
@@ -116,6 +238,9 @@ func (a *archive) resolve(bucket, object string) (string, string) {
 func (a *archive) Put(ctx context.Context, bucket, object string, body io.Reader) error {
 	if !a.enabled {
 		return ErrArchiveDisabled
+	}
+	if !a.InScope(bucket) {
+		return ErrArchiveNotInScope
 	}
 
 	s3Bucket, s3Key := a.resolve(bucket, object)
@@ -144,6 +269,59 @@ func (a *archive) Open(ctx context.Context, bucket, object string) (io.ReadClose
 		size = *out.ContentLength
 	}
 	return out.Body, size, nil
+}
+
+// Reachable resolves where this bucket's objects would be archived and checks
+// that the destination is there.
+//
+// The destination is never created for you. Bucket creation carries decisions
+// this service has no business making on an operator's behalf: region, public
+// access blocking, encryption, versioning, object lock. Creating one with SDK
+// defaults would quietly produce a bucket full of user uploads without an
+// explicit public-access block, which is a worse outcome than a clear error.
+func (a *archive) Reachable(ctx context.Context, bucket string) error {
+	if !a.enabled {
+		return ErrArchiveDisabled
+	}
+	if !a.InScope(bucket) {
+		return ErrArchiveNotInScope
+	}
+
+	target, _ := a.resolve(bucket, "")
+	if err := a.aws.S3HeadBucket(ctx, target); err != nil {
+		return fmt.Errorf("archive bucket %q is not reachable: %w", target, err)
+	}
+	return nil
+}
+
+// ArchiveBucketFor reports where this local bucket's objects are archived, so an
+// operator-facing message can name it without re-deriving the mapping.
+func (a *archive) ArchiveBucketFor(bucket string) string {
+	target, _ := a.resolve(bucket, "")
+	return target
+}
+
+// Walk lists what the archive holds for a local bucket.
+//
+// It is the exact inverse of resolve: whichever layout is configured, the caller
+// gets back plain local object keys. That is what lets a restore be written
+// without any knowledge of where things physically sit, and it keeps the two
+// directions of the mapping in one file where they can be read together.
+func (a *archive) Walk(ctx context.Context, bucket string, fn func(key string, size int64) error) error {
+	if !a.enabled {
+		return ErrArchiveDisabled
+	}
+
+	s3Bucket, prefix := a.resolve(bucket, "")
+
+	return a.aws.S3ListObjects(ctx, s3Bucket, prefix, func(s3Key string, size int64) error {
+		key := strings.TrimPrefix(s3Key, prefix)
+		if key == "" {
+			// A directory-marker style key, nothing to restore.
+			return nil
+		}
+		return fn(key, size)
+	})
 }
 
 func (a *archive) Stat(ctx context.Context, bucket, object string) (int64, error) {

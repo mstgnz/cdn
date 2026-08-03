@@ -59,6 +59,10 @@ func (m *mockAwsService) S3PutObject(context.Context, string, string, io.Reader)
 func (m *mockAwsService) S3HeadObject(context.Context, string, string) (*s3.HeadObjectOutput, error) {
 	return nil, nil
 }
+func (m *mockAwsService) S3HeadBucket(context.Context, string) error { return nil }
+func (m *mockAwsService) S3ListObjects(context.Context, string, string, func(string, int64) error) error {
+	return nil
+}
 func (m *mockAwsService) S3GetObject(context.Context, string, string) (*s3.GetObjectOutput, error) {
 	return nil, nil
 }

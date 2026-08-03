@@ -28,12 +28,21 @@ var (
 		".avif": true, // AVIF format
 		// PDF files
 		".pdf": true,
+		// Word files
+		".doc":  true,
+		".docx": true,
 		// Excel files
 		".xls":  true,
 		".xlsx": true,
 		// PowerPoint files
 		".ppt":  true,
 		".pptx": true,
+		// Tabular text
+		".csv": true,
+		// Archives. Served as an opaque download and never opened here, so the
+		// zip-slip class does not apply; what it does mean is that the content
+		// check can only confirm the container, never what is inside it.
+		".zip": true,
 		// SQL files
 		".sql": true,
 		// Audio files
@@ -64,6 +73,9 @@ var (
 		"image/avif":               true, // AVIF format (modern browsers/mobile)
 		"application/octet-stream": true, // Generic binary (some mobile apps use this)
 		"application/pdf":          true,
+		// Word MIME types
+		"application/msword": true,
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
 		// Excel MIME types
 		"application/vnd.ms-excel": true,
 		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": true,
@@ -73,6 +85,13 @@ var (
 		// SQL MIME types
 		"text/plain":      true,
 		"application/sql": true,
+		// CSV MIME types. Browsers are inconsistent here and several send an Excel
+		// type for a .csv, which is why the Excel entries above also cover it.
+		"text/csv":        true,
+		"application/csv": true,
+		// Archive MIME types
+		"application/zip":              true,
+		"application/x-zip-compressed": true,
 		// Audio MIME types
 		"audio/wav":  true,
 		"audio/wave": true,

@@ -6,6 +6,37 @@ All notable changes to this project will be documented in this file.
 
 ## [1.10.0] - 2026-08-03
 
+### Security
+
+- **Stored XSS through text uploads (`.csv`, `.sql`).** Content validation
+  accepts a file whose bytes are valid UTF-8 text, which is how those formats get
+  through, and `http.DetectContentType` reports `text/html` for anything opening
+  with markup. Together they meant `<script>…</script>` uploaded as `evil.csv`
+  came back with `Content-Type: text/html` on this service's own origin and
+  executed for every visitor who opened the link. `X-Content-Type-Options:
+  nosniff` was no defence: the browser was not guessing, it was being told.
+
+  Sniffed `text/html`, `application/xhtml+xml`, `text/xml` and `application/xml`
+  are now served as `text/plain`. The stored bytes are unchanged; only the type
+  they are announced under is. `.html` is not on the extension allowlist, so a
+  sniffed HTML type is never something a caller legitimately stored. SVG is
+  unaffected, since it is declared as itself and defended by its sandbox CSP.
+
+  Present since `.sql` was allowlisted, so this predates the `.csv` addition in
+  this release. Two prior audits missed it because both reasoned about
+  extensions rather than about what the bytes sniff as. `/resize` echoed uploads
+  back the same way and is fixed alongside.
+
+- **MinIO and Redis were published on every interface.** `docker-compose.yml`
+  bound `9000`, `9001` and `6379` to `0.0.0.0`, putting an S3 endpoint holding
+  every object, an admin console and a password-less Redis on the public
+  internet of any host with a public IP. A host firewall does not cover this:
+  Docker writes its own iptables rules and a published port bypasses `ufw`.
+
+  All three are now bound to `127.0.0.1` (`MINIO_BIND` / `REDIS_BIND` to
+  override). Nothing in the stack needed them published: the API replicas reach
+  both over the compose network.
+
 ### Fixed
 
 - **Production ran out of memory roughly seven times a day.** Three replicas on a
@@ -51,10 +82,17 @@ All notable changes to this project will be documented in this file.
   `$http_upgrade`, so every ordinary `GET` announced a protocol switch and the
   `keepalive 32` pool was never used. Every request paid for a fresh TCP
   connection.
-- **The image cache in `nginx.conf` did nothing.** `proxy_cache_valid` and
-  `proxy_cache_use_stale` were configured without a `proxy_cache` zone, which
-  silently disables them, so every request reached the Go service and
-  `X-Cache-Status` was always empty. A zone is now declared and used.
+- **The image cache in `nginx.conf` did nothing, and has been removed rather than
+  repaired.** `proxy_cache_valid` and `proxy_cache_use_stale` were configured
+  without a `proxy_cache` zone, which silently disables both, so every request
+  reached the Go service and `X-Cache-Status` was always empty. Adding the zone
+  is the obvious fix and it is the wrong one: with caching at this layer a
+  deleted object kept being served until its entry expired, and the open source
+  nginx build has no purge, so `DELETE` had no way to take effect. That was
+  caught by an existing test asserting deletion is immediate. Caching belongs in
+  the CDN or proxy in front, where the operator already controls invalidation;
+  the dead directives are gone so the config no longer describes behaviour it
+  does not have.
 
 ### Added
 
@@ -71,10 +109,56 @@ All notable changes to this project will be documented in this file.
     has to be indexed to find one again. `ARCHIVE_BUCKET` optionally collapses
     every bucket into one under a `<minio-bucket>/` prefix, which is easier to
     administer once there are more than a handful.
+  - `ARCHIVE_ONLY_BUCKETS` narrows which buckets are archived; the default is all
+    of them, so a newly created bucket is never silently left unprotected. It
+    gates writing and not reading, so removing a bucket from the list cannot
+    break URLs for objects archived while it was still included. Named to stay a
+    clear distance from `ARCHIVE_BUCKET`, which means something else entirely.
   - Nothing is copied back into MinIO on a cold read. Re-warming would let a
     single crawl of old content refill the disk this exists to keep empty.
   - Worth knowing before tuning: AWS bills objects under 128 KB as 128 KB in this
     class, and bills a delete before 90 days as 90 days.
+- **`POST /archive`, on-demand tiering.** An application names the objects it no
+  longer needs served locally, and they are copied to the archive and removed
+  from MinIO. The URL does not change: a read that misses locally is served from
+  the archive, so links already sitting in a caller's database keep working.
+  - Accepts object keys **or** full CDN URLs, since callers usually store the URL
+    this service returned at upload time. A URL pointing at another host or
+    another bucket is rejected rather than guessed at.
+  - `evict: false` copies to the archive and keeps the local copy.
+  - Idempotent: a second call on an already-archived object reports
+    `already_archived` rather than an error, so batches are safe to retry.
+  - Bucket-scoped tokens work and are confined to their own bucket.
+  - This exists because age is not a usable signal everywhere. On a CDN that
+    objects were migrated into, the stored timestamps describe the migration
+    rather than the content, so a five-year-old document and yesterday's photo
+    look the same age and no retention window can separate them. The application
+    that owns the content is the only party that knows.
+- **Word documents, CSV and ZIP are accepted** (`.doc`, `.docx`, `.csv`, `.zip`),
+  with the matching MIME types. `.xlsx` and `.pptx` were already supported, so
+  the absence of `.docx` was an oversight rather than a policy. The content gate
+  needed nothing new: legacy Office files are OLE compound documents and the
+  modern ones are ZIP containers, both of which it already recognised, and CSV
+  passes through the UTF-8 text branch. All four are covered by round-trip tests.
+
+  Note that the content check confirms a container, never what is inside it, and
+  that a formula in a CSV cell is stored verbatim; the risk there belongs to
+  whatever opens the file, not to serving it.
+- **`backfill` command** (`cmd/backfill`, shipped in the image alongside the
+  server). Copies objects that predate the archive into it, which is what makes
+  retention and `/archive` able to free anything at all on an existing
+  deployment: without an archived copy both correctly refuse to delete. It copies
+  and never moves, has no delete call anywhere in it, and is safe to interrupt
+  and rerun because each object is checked against the archive before transfer.
+  Defaults to reporting; `-apply` performs the transfer.
+- **`restore` command** (`cmd/restore`), `backfill` in the other direction: it
+  walks what the archive holds and writes it back into local storage, creating a
+  local bucket if it no longer exists. It ships because adopting cold storage
+  must not be a one-way door. Like `backfill` it copies and never deletes:
+  nothing is removed from the archive, and emptying the S3 bucket stays a
+  deliberate act performed from AWS once local storage is confirmed complete.
+  Ignores `ARCHIVE_ONLY_BUCKETS`, since pulling back a bucket that was dropped
+  from the scope is one of the cases it exists for.
 - **Retention job.** Deletes MinIO objects older than `RETENTION_DAYS`, and only
   those the archive is confirmed to hold at a matching size. It is off by default
   (`RETENTION_ENABLED=false`) and reports without deleting the first time it is
@@ -90,6 +174,13 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **The retention sweep runs its per-object work concurrently**
+  (`RETENTION_MAX_CONCURRENT`, default 8). Every eligible object costs one
+  `HeadObject` against the archive before it can be deleted, and doing those one
+  at a time makes a pass over a few million objects take days: not a slow sweep
+  so much as one that never finishes. Listing stays sequential, since it is a
+  cheap local stream, and the cap keeps a routine sweep from turning into a
+  denial of service against the archive.
 - **Archiving is no longer requested per upload.** The `aws_upload` form field and
   JSON property are accepted and ignored; whether a deployment archives is now a
   property of the deployment, on when AWS credentials are present and off when
@@ -104,6 +195,35 @@ All notable changes to this project will be documented in this file.
   refusing it would turn an archive misconfiguration into a total upload outage.
   A failed archive write is reported in the response and leaves the object
   ineligible for retention, which is the safe end.
+
+### Fixed (tests)
+
+- **`pkg/batch` tests raced with the code they were testing.** The processor
+  callback runs on the BatchProcessor's goroutines, and every subtest read the
+  variables it wrote without synchronisation, which `-race` flagged in five
+  places. The concurrency-limit case was the worst: it measured peak concurrency
+  with an unsynchronised counter, which is the one thing such a counter cannot
+  do. Rewritten around a guarded recorder, and the fixed `time.Sleep` waits are
+  replaced with bounded polling so a slow machine makes the suite slower rather
+  than flaky.
+- **Added coverage for non-image content**, which the suite had none of despite
+  the service accepting documents, audio and video: byte-for-byte round trips for
+  PDF, xlsx, pptx, mp4, mp3, wav and sql, a 5 MB object through the streaming
+  read path, confirmation that resize parameters are ignored for non-images, and
+  that extensions outside the allowlist are still refused.
+- **Added coverage for batch upload**, asserting per file that each stored object
+  holds the content of the file it was named for. Concurrency bugs in that path
+  show up as one file's bytes under another file's name, which a count-only
+  assertion cannot see.
+- **Added coverage for `pkg/validator`, which had none.** All three upload gates
+  are now pinned: the extension allowlist (including case handling and that a
+  double extension is judged on its last one), the MIME list, and the content
+  check. The content tests matter most, since that gate is the only one an
+  attacker does not control: every supported format is confirmed to pass it, and
+  an ELF header is confirmed to fail it whatever it is named.
+- **Added a concurrency test for the retention sweep** covering 300 objects
+  across all three verification outcomes, asserting that every verified object is
+  deleted exactly once and no unverified one is touched regardless of interleaving.
 
 ### Fixed (previously unreleased)
 

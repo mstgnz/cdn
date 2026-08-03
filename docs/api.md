@@ -334,6 +334,113 @@ Response:
 }
 ```
 
+### Accepted File Types
+
+Uploads pass three independent gates. The first two describe the request, the
+third describes the bytes, which is the only one a caller does not control.
+
+1. **Extension allowlist.** Anything a browser could execute or interpret is
+   absent by design: `.html`, `.js`, `.php`, `.sh`, `.exe`, `.svg` excepted (it
+   is served under a sandboxing CSP).
+
+   | Group | Extensions |
+   |---|---|
+   | Images | `jpg` `jpeg` `png` `gif` `webp` `bmp` `tiff` `tif` `svg` `ico` `heic` `heif` `avif` `raw` |
+   | Documents | `pdf` `doc` `docx` `xls` `xlsx` `ppt` `pptx` |
+   | Text / data | `csv` `sql` |
+   | Archives | `zip` |
+   | Audio | `mp3` `wav` |
+   | Video | `mp4` `mov` `3gp` `avi` |
+
+2. **MIME type**, from the multipart part's `Content-Type`. Note that
+   `application/octet-stream` is accepted, since several mobile clients send it
+   for everything, so this gate is weaker than it looks.
+
+3. **Content signature.** The bytes must match a known format, or be valid UTF-8
+   text with no NUL bytes (which is what lets `csv` and `sql` through). A file
+   whose content matches nothing is rejected however it is named.
+
+   Files with an image extension get a stricter check still: they must decode as
+   an image, so a payload behind a `.jpg` name does not survive.
+
+Two limits of the content gate, worth stating plainly:
+
+- It confirms a **container**, not its contents. `docx`, `xlsx`, `pptx` and `zip`
+  are all ZIP underneath and indistinguishable to it.
+- A spreadsheet formula in a CSV cell is stored verbatim. Whatever opens the file
+  later owns that risk; serving it does not evaluate anything.
+
+Turn the whole thing off with `VALIDATE_FILE=false` only where the callers are
+trusted.
+
+### Archive Operations
+
+#### Archive Objects
+
+```http
+POST /archive
+```
+
+Moves specific objects to cold storage and, by default, frees the local copies.
+Accepts either the general token or a bucket-scoped one; a scoped token can only
+archive inside its own bucket.
+
+**The URL of an archived object does not change.** A read that no longer finds
+the object locally is served from the archive, so links already stored in a
+caller's database keep working untouched.
+
+Body:
+
+- `bucket`: Bucket name (optional for a bucket-scoped token, which is authoritative)
+- `files`: Object keys or full CDN URLs. Both forms are accepted, since callers
+  usually store the URL returned at upload time. A URL pointing at another host
+  or another bucket is rejected.
+- `evict`: Boolean, default `true`. When `false` the object is copied to the
+  archive and the local copy is kept.
+
+```json
+{
+  "bucket": "photos",
+  "files": [
+    "2024/01/30/image.jpg",
+    "https://cdn.example.com/photos/2024/01/30/other.jpg"
+  ],
+  "evict": true
+}
+```
+
+Response, per file and in summary:
+
+```json
+{
+  "results": [
+    { "file": "2024/01/30/image.jpg", "object": "2024/01/30/image.jpg", "status": "archived", "size": 482913 },
+    { "file": "https://cdn.example.com/photos/2024/01/30/other.jpg", "object": "2024/01/30/other.jpg", "status": "already_archived" }
+  ],
+  "summary": { "archived": 1, "archived_kept": 0, "already_archived": 1, "not_found": 0, "failed": 0, "bytes_freed": 482913 }
+}
+```
+
+Statuses:
+
+| Status | Meaning |
+|---|---|
+| `archived` | Copied to the archive, verified, local copy removed |
+| `archived_kept` | Copied and verified, local copy kept (`evict: false`) |
+| `already_archived` | The archive already held it; nothing to do |
+| `not_found` | Neither tier has the object |
+| `failed` | Something went wrong. **The local copy was not touched.** `error` says why |
+
+An object is only ever removed locally after the archive has confirmed a copy of
+the same size. A `failed` result therefore always means the object is still
+served exactly as before. Calling the endpoint again on an already-archived
+object is a no-op, so batches are safe to retry.
+
+Returns `503` when the deployment has no archive configured, rather than
+reporting success for files that were not stored anywhere.
+
+See [Cold Storage Archive](archive.md) for the full lifecycle.
+
 ### Storage Operations
 
 All `/aws/*` and `/minio/*` routes require authentication (`Authorization: Bearer <token>`).

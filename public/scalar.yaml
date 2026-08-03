@@ -642,6 +642,114 @@ paths:
           description: Invalid request or image format
         "413":
           description: Image too large
+  /archive:
+    post:
+      summary: Archive objects to cold storage
+      description: |
+        Moves specific objects to cold storage and, by default, frees the local
+        copies.
+
+        The URL of an archived object does not change. A read that no longer
+        finds the object locally is served from the archive, so links already
+        stored in a caller's database keep working untouched.
+
+        An object is only removed locally after the archive has confirmed a copy
+        of the same size, so a `failed` result always means the object is still
+        served exactly as before. Calling again on an already-archived object is
+        a no-op, which makes batches safe to retry.
+
+        Accepts either token kind. A bucket-scoped token can only archive inside
+        its own bucket; naming another returns 403.
+      tags:
+        - Image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                bucket:
+                  type: string
+                  description: >-
+                    Target bucket. Optional when authenticating with a
+                    bucket-scoped token, which always acts on its own bucket;
+                    naming a different bucket returns 403.
+                files:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                  description: >-
+                    Object keys or full CDN URLs. Both are accepted because
+                    callers usually store the URL returned at upload time. A URL
+                    pointing at another host or another bucket is rejected.
+                  example:
+                    - 2024/01/30/image.jpg
+                    - https://cdn.example.com/photos/2024/01/30/other.jpg
+                evict:
+                  type: boolean
+                  default: true
+                  description: >-
+                    Whether to remove the local copy once the archive is verified
+                    to hold the object. Set false to take a copy and keep serving
+                    locally.
+      responses:
+        "200":
+          description: Per-file outcome and a summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        file:
+                          type: string
+                          description: The reference as supplied by the caller
+                        object:
+                          type: string
+                          description: The resolved object key
+                        status:
+                          type: string
+                          enum:
+                            - archived
+                            - archived_kept
+                            - already_archived
+                            - not_found
+                            - failed
+                        size:
+                          type: integer
+                          format: int64
+                        error:
+                          type: string
+                  summary:
+                    type: object
+                    properties:
+                      archived:
+                        type: integer
+                      archived_kept:
+                        type: integer
+                      already_archived:
+                        type: integer
+                      not_found:
+                        type: integer
+                      failed:
+                        type: integer
+                      bytes_freed:
+                        type: integer
+                        format: int64
+        "400":
+          description: Invalid body, missing bucket, or batch larger than MAX_BATCH_FILES
+        "403":
+          description: Bucket-scoped token naming a different bucket
+        "503":
+          description: No archive is configured on this deployment
   /health:
     get:
       summary: Health check

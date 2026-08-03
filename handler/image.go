@@ -123,7 +123,9 @@ func acquireOptimizeSlot() func() {
 // body must be positioned at the start; callers that have already streamed it
 // elsewhere are responsible for rewinding, which is what rewindAndArchive is for.
 func (i image) archiveObject(ctx context.Context, bucket, objectName string, body io.Reader) string {
-	if i.archive == nil || !i.archive.Enabled() {
+	// Not configured, or configured to leave this bucket alone. Both are choices
+	// the operator made, so neither is worth a word in the response.
+	if i.archive == nil || !i.archive.InScope(bucket) {
 		return ""
 	}
 
@@ -143,7 +145,7 @@ func (i image) archiveObject(ctx context.Context, bucket, objectName string, bod
 // zero bytes. Nothing surfaced it because the upload still reported success and
 // nobody read the archive back.
 func (i image) rewindAndArchive(ctx context.Context, bucket, objectName string, body io.ReadSeeker) string {
-	if i.archive == nil || !i.archive.Enabled() {
+	if i.archive == nil || !i.archive.InScope(bucket) {
 		return ""
 	}
 
@@ -376,7 +378,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		if isSVG {
 			return "image/svg+xml"
 		}
-		return http.DetectContentType(head)
+		return inertContentType(http.DetectContentType(head))
 	}
 
 	// Resize path: ImageMagick must decode the whole image, so the object is
@@ -480,6 +482,35 @@ func (i image) openObject(ctx context.Context, bucket, objectName string) (io.Re
 		return nil, 0, errObjectMissing
 	}
 	return rc, size, nil
+}
+
+// inertContentType downgrades any sniffed type a browser would execute.
+//
+// This closes a stored-XSS hole. Content validation accepts a file whose bytes
+// are valid UTF-8 text, which is what lets .csv and .sql through, and
+// http.DetectContentType reports text/html for anything that opens with markup.
+// The two together meant an attacker could upload `<script>…</script>` named
+// evil.csv and have this service serve it as text/html on its own origin.
+// nosniff does not help: the browser is not sniffing, it is being told.
+//
+// The extension allowlist has no HTML in it, so a sniffed HTML or XML type is
+// never something a caller legitimately stored. Serving it as text/plain leaves
+// the bytes byte-identical and renders them harmless. SVG is handled before this
+// is reached: it is declared as itself and defended by a sandbox CSP, because
+// unlike these it is a format the service means to serve.
+func inertContentType(sniffed string) string {
+	// DetectContentType returns e.g. "text/html; charset=utf-8"; compare on the
+	// media type alone.
+	mediaType := sniffed
+	if i := strings.IndexByte(mediaType, ';'); i >= 0 {
+		mediaType = mediaType[:i]
+	}
+
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "text/html", "application/xhtml+xml", "text/xml", "application/xml":
+		return "text/plain; charset=utf-8"
+	}
+	return sniffed
 }
 
 // errObjectMissing means neither tier has the object. The handler turns this
@@ -905,8 +936,12 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 	}
 
 	if !resize || !service.IsImageFile(file.Filename) {
+		// Same downgrade as the read path: this echoes the caller's bytes back, so
+		// markup uploaded here would otherwise come out as text/html on this
+		// origin. Harder to abuse than the stored case, since it needs an
+		// authenticated multipart POST, but it is the identical mistake.
 		c.Set("Content-Length", strconv.Itoa(len(fileContent)))
-		c.Set("Content-Type", http.DetectContentType(fileContent))
+		c.Set("Content-Type", inertContentType(http.DetectContentType(fileContent)))
 		return c.Send(fileContent)
 	}
 
