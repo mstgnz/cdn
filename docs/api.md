@@ -179,7 +179,7 @@ Body:
 - `file`: Image file
 - `bucket`: Bucket name
 - `path`: Storage path (optional)
-- `aws_upload`: Boolean flag for AWS upload (optional)
+- `aws_upload`: Deprecated, accepted and ignored. Archiving is enabled per deployment (when AWS credentials are configured), not per request. (optional)
 - `optimize`: Boolean; when `true`, store a visually-lossless, size-reduced version (re-encode + metadata strip + longest side capped at `OPTIMIZE_MAX_DIMENSION`, default 2560px). Explicit `width`/`height` take precedence over the cap. Animated GIFs and non-images pass through untouched. Default `false` stores the original bytes unchanged. (optional)
 - `width`: Target width in pixels (optional)
 - `height`: Target height in pixels (optional)
@@ -202,7 +202,7 @@ Body:
 - `files`: Multiple image files (capped at `MAX_BATCH_FILES`, default 100)
 - `bucket`: Target bucket name
 - `path`: Storage path (optional)
-- `aws_upload`: Boolean flag for AWS upload (optional)
+- `aws_upload`: Deprecated, accepted and ignored. Archiving is enabled per deployment (when AWS credentials are configured), not per request. (optional)
 - `optimize`: Boolean; when `true`, each uploaded image is stored size-reduced (visually lossless). Animated GIFs and non-images pass through untouched. Default `false`. (optional)
 
 Response:

@@ -72,7 +72,7 @@ func TestHealthCheck_Degraded(t *testing.T) {
 // body before touching storage (returns 400 "File Not Found!").
 func TestUploadImage_InvalidForm(t *testing.T) {
 	app := fiber.New()
-	h := handler.NewImage(deadMinio(t), stubAws{}, &service.ImageService{})
+	h := handler.NewImage(deadMinio(t), stubAws{}, service.NewArchive(stubAws{}), &service.ImageService{})
 	app.Post("/upload", h.UploadImage)
 
 	req := httptest.NewRequest("POST", "/upload", bytes.NewBuffer([]byte(`{}`)))

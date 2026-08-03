@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -86,6 +87,12 @@ func main() {
 	_ = os.Setenv("MAGICK_WIDTH_LIMIT", config.GetEnvOrDefault("IMAGICK_WIDTH_LIMIT", "16384"))
 	_ = os.Setenv("MAGICK_HEIGHT_LIMIT", config.GetEnvOrDefault("IMAGICK_HEIGHT_LIMIT", "16384"))
 
+	// The thread cap in particular has to be set here rather than only through
+	// SetResourceLimit below: genesis is where the OpenMP thread pool is built,
+	// and every thread in it costs a glibc arena that is never returned to the
+	// OS. Setting it afterwards caps how many are used but not how many exist.
+	_ = os.Setenv("MAGICK_THREAD_LIMIT", strconv.Itoa(service.ImagickThreadLimit()))
+
 	// Initialize the ImageMagick environment once for the whole process.
 	// MagickWandGenesis/Terminus are NOT reentrant and must not be called
 	// per-request; doing so corrupts the shared environment under concurrency.
@@ -118,6 +125,24 @@ func main() {
 	}
 	statsService := service.NewStatsService()
 
+	// Cold-storage archive. Absent AWS credentials this reports itself disabled
+	// and every archive call becomes a no-op, which is the expected state for a
+	// MinIO-only deployment: no error, no warning, nothing to configure. Said out
+	// loud at boot either way, because "is my archive on?" should not require
+	// reading code to answer.
+	archive := service.NewArchive(awsService)
+	if archive.Enabled() {
+		logger.Info().Msg("archive enabled: uploads are mirrored to cold storage")
+	} else {
+		logger.Info().Msg("archive disabled: no AWS credentials configured, serving from MinIO only")
+	}
+
+	// Retention. Off unless asked for, and reporting-only the first time it is,
+	// because the one thing this job does is delete files. It refuses to start at
+	// all without the archive, since without it there is nothing to fall back to.
+	retention := service.NewRetention(minioClient, archive)
+	retention.Start(ctx)
+
 	// Initialize cache service
 	cacheService, err := service.NewCacheService()
 	if err != nil {
@@ -126,7 +151,7 @@ func main() {
 	}
 
 	// Initialize handlers
-	imageHandler = handler.NewImage(minioClient, awsService, imageService)
+	imageHandler = handler.NewImage(minioClient, awsService, archive, imageService)
 	awsHandler = handler.NewAwsHandler(awsService)
 	minioHandler = handler.NewMinioHandler(minioClient)
 	wsHandler = handler.NewWebSocketHandler(statsService)

@@ -107,7 +107,7 @@ func TestGetImage_Integration(t *testing.T) {
 	})
 
 	imageSvc := &service.ImageService{MinioClient: cl}
-	h := NewImage(cl, service.NewAwsService(), imageSvc)
+	h := NewImage(cl, service.NewAwsService(), service.NewArchive(service.NewAwsService()), imageSvc)
 	app := fiber.New()
 	app.Get("/:bucket/*", h.GetImage)
 

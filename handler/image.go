@@ -8,6 +8,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -43,6 +44,7 @@ type Image interface {
 type image struct {
 	minioClient  *minio.Client
 	awsService   service.AwsService
+	archive      service.Archive
 	imageService *service.ImageService
 	workerPool   *worker.Pool
 	batchProc    *batch.BatchProcessor
@@ -63,11 +65,22 @@ type ImageProcessRequest struct {
 // bucket, so the field is optional for those callers. Emptiness is enforced
 // after the token and the request have been reconciled by resolveBucket.
 type UploadUrlRequest struct {
-	Path      string `json:"path"`
-	Bucket    string `json:"bucket"`
-	URL       string `json:"url" validate:"required,url"`
-	AWSUpload bool   `json:"aws_upload"`
-	Optimize  bool   `json:"optimize"`
+	Path   string `json:"path"`
+	Bucket string `json:"bucket"`
+	URL    string `json:"url" validate:"required,url"`
+
+	// AWSUpload is accepted and ignored.
+	//
+	// Archiving used to be requested per upload through this field. It is now a
+	// property of the deployment: on when AWS credentials are configured, off
+	// when they are not. The field stays so that clients still sending it keep
+	// working rather than failing validation; it will be removed in a later
+	// major version.
+	//
+	// Deprecated: has no effect.
+	AWSUpload bool `json:"aws_upload"`
+
+	Optimize bool `json:"optimize"`
 }
 
 // optimizeSem bounds the number of concurrent ImageMagick optimizations
@@ -89,6 +102,116 @@ func acquireOptimizeSlot() func() {
 	})
 	optimizeSem <- struct{}{}
 	return func() { <-optimizeSem }
+}
+
+// archiveObject copies a freshly stored object into the cold tier and reports
+// what happened, as a string suitable for the upload response.
+//
+// Archiving is not opt-in. It used to be, through an `aws_upload` form field,
+// which meant a caller that forgot the flag left the only copy of the object in
+// MinIO. That was survivable while MinIO held everything forever; it stops being
+// survivable the moment the retention job starts removing local copies. So when
+// the archive is configured, every upload is archived, and when it is not, this
+// does nothing at all and says nothing about it.
+//
+// A failure here does not fail the upload. The object is already durably in
+// MinIO, and the retention job refuses to delete anything it cannot find in the
+// archive, so the worst case is that the object keeps occupying local disk until
+// the next successful archive attempt. Losing the upload over a transient S3
+// error would be the worse trade.
+//
+// body must be positioned at the start; callers that have already streamed it
+// elsewhere are responsible for rewinding, which is what rewindAndArchive is for.
+func (i image) archiveObject(ctx context.Context, bucket, objectName string, body io.Reader) string {
+	if i.archive == nil || !i.archive.Enabled() {
+		return ""
+	}
+
+	if err := i.archive.Put(ctx, bucket, objectName, body); err != nil {
+		log.Printf("archive: failed to store %s/%s: %v", bucket, objectName, err)
+		return fmt.Sprintf("Archive Failed %s", err.Error())
+	}
+	return "Archive Successfully Uploaded"
+}
+
+// rewindAndArchive archives a reader that has already been consumed by the MinIO
+// upload.
+//
+// The rewind is the whole point. The previous code handed the *same* reader to
+// MinIO and then to S3, one after the other, with nothing in between: by the time
+// the S3 call ran the reader sat at EOF, so every object the archive received was
+// zero bytes. Nothing surfaced it because the upload still reported success and
+// nobody read the archive back.
+func (i image) rewindAndArchive(ctx context.Context, bucket, objectName string, body io.ReadSeeker) string {
+	if i.archive == nil || !i.archive.Enabled() {
+		return ""
+	}
+
+	if _, err := body.Seek(0, io.SeekStart); err != nil {
+		log.Printf("archive: cannot rewind %s/%s: %v", bucket, objectName, err)
+		return fmt.Sprintf("Archive Failed %s", err.Error())
+	}
+	return i.archiveObject(ctx, bucket, objectName, body)
+}
+
+// resizeSem bounds concurrent ImageMagick decodes on the *read* path.
+// acquireOptimizeSlot covers uploads only, which left GET wide open: a gallery
+// page requesting twenty thumbnails produced twenty simultaneous full decodes,
+// each holding the whole raster in memory, and that is what repeatedly drove
+// production into the host OOM-killer. The cap is deliberately separate from the
+// upload one because the two have different traffic shapes and the read path is
+// the hot one.
+var (
+	resizeSemOnce sync.Once
+	resizeSem     chan struct{}
+)
+
+// acquireResizeSlot waits for a decode slot and reports whether it got one.
+//
+// The wait is generous on purpose. The goal is to serialise decodes, not to shed
+// load: queueing behind a slot costs a caller some latency, whereas failing it
+// costs a visibly wrong image. With the slot count low and each decode bounded by
+// the ImageMagick time limit, the timeout should effectively never be reached,
+// and if it is, that is a real signal the host is out of headroom.
+func acquireResizeSlot() (release func(), ok bool) {
+	return acquireResizeSlotWithin(
+		time.Duration(config.GetEnvAsIntOrDefault("RESIZE_QUEUE_TIMEOUT_SEC", 10)) * time.Second,
+	)
+}
+
+// acquireResizeSlotWithin is the testable half: the wait is a parameter so a
+// test does not have to spend the production timeout to observe what happens
+// when the slots are all taken.
+func acquireResizeSlotWithin(wait time.Duration) (release func(), ok bool) {
+	initResizeSem()
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+
+	select {
+	case resizeSem <- struct{}{}:
+		return func() { <-resizeSem }, true
+	case <-timer.C:
+		return func() {}, false
+	}
+}
+
+// initResizeSem sizes the semaphore on first use, after .env has been loaded.
+func initResizeSem() {
+	resizeSemOnce.Do(func() {
+		n := config.GetEnvAsIntOrDefault("RESIZE_MAX_CONCURRENT", 4)
+		if n < 1 {
+			n = 1
+		}
+		resizeSem = make(chan struct{}, n)
+	})
+}
+
+// resizeSlotCapacity reports the configured number of decode slots. Only used by
+// tests, which need to know how many to take before the next one must fail.
+func resizeSlotCapacity() int {
+	initResizeSem()
+	return cap(resizeSem)
 }
 
 // validateImageContent enforces that a file whose extension marks it an image
@@ -147,10 +270,12 @@ func (i image) maybeOptimize(content []byte, opts service.OptimizeOptions) ([]by
 
 // BatchUploadRequest represents the request body for batch uploads
 type BatchUploadRequest struct {
-	Bucket    string   `json:"bucket" validate:"required"`
-	Path      string   `json:"path"`
-	Files     []string `json:"files" validate:"required,min=1"`
-	AWSUpload bool     `json:"aws_upload"`
+	Bucket string   `json:"bucket" validate:"required"`
+	Path   string   `json:"path"`
+	Files  []string `json:"files" validate:"required,min=1"`
+
+	// Deprecated: has no effect. See UploadUrlRequest.AWSUpload.
+	AWSUpload bool `json:"aws_upload"`
 }
 
 // BatchDeleteRequest represents the request body for batch deletions. Bucket is
@@ -161,7 +286,7 @@ type BatchDeleteRequest struct {
 	AWSDelete bool     `json:"aws_delete"`
 }
 
-func NewImage(minioClient *minio.Client, awsService service.AwsService, imageService *service.ImageService) Image {
+func NewImage(minioClient *minio.Client, awsService service.AwsService, archive service.Archive, imageService *service.ImageService) Image {
 	// Initialize worker pool with 5 workers
 	workerConfig := worker.DefaultConfig()
 	workerConfig.Workers = 5
@@ -171,6 +296,7 @@ func NewImage(minioClient *minio.Client, awsService service.AwsService, imageSer
 	img := &image{
 		minioClient:  minioClient,
 		awsService:   awsService,
+		archive:      archive,
 		imageService: imageService,
 		workerPool:   wp,
 	}
@@ -220,7 +346,9 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		return c.SendFile("./public/notfound.png")
 	}
 
-	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
+	// MinIO holds the recent window, the archive holds everything. An object the
+	// retention job has already removed locally is still served from here.
+	body, size, err := i.openObject(ctx, bucket, objectName)
 	if err != nil {
 		return c.SendFile("./public/notfound.png")
 	}
@@ -255,12 +383,34 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	// fully buffered here. Width/Height headers come from the decode we are
 	// already doing for the resize.
 	if resize {
-		defer object.Close()
+		defer body.Close()
 
-		getByte := service.StreamToByte(object)
+		getByte := service.StreamToByte(body)
 		if len(getByte) == 0 {
 			return c.SendFile("./public/notfound.png")
 		}
+
+		// Both calls below decode the image, so the slot has to cover the pair
+		// rather than the resize alone.
+		release, gotSlot := acquireResizeSlot()
+		if !gotSlot {
+			// Every decode slot is busy. Serving the original keeps the caller's
+			// <img> working, which a 503 would not, and matches what the resize
+			// paths already do when ImageMagick itself fails.
+			//
+			// no-store is load-bearing here, not decoration: a CDN in front of
+			// this keys its cache on the full request URI, so without it the
+			// unresized body would be stored under the ?width=... URL and served
+			// for the whole cache lifetime. A momentary overload would otherwise
+			// turn into days of full-size images. Note that an upstream cache
+			// configured with `proxy_ignore_headers Cache-Control` overrides
+			// this; see nginx.conf, which deliberately does not.
+			c.Set("Cache-Control", "no-store")
+			c.Set("Content-Type", contentTypeFor(getByte))
+			c.Status(http.StatusOK)
+			return c.Send(getByte)
+		}
+		defer release()
 
 		if err, orjWidth, orjHeight := i.imageService.ImagickGetWidthHeight(getByte); err == nil {
 			c.Set("Width", strconv.Itoa(int(orjWidth)))
@@ -276,19 +426,16 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	// constant memory, whatever its type or size (original images served
 	// as-is, PDFs, videos, large files). This avoids buffering whole objects
 	// into RAM and the per-request ImageMagick decode. fasthttp closes the
-	// stream (and therefore the MinIO object) once the response is written.
-	stat, err := object.Stat()
-	if err != nil || stat.Size == 0 {
-		_ = object.Close()
-		return c.SendFile("./public/notfound.png")
-	}
+	// stream (and therefore the underlying object) once the response is written.
+	// The size came from openObject, which has already established that the
+	// object exists and is non-empty in whichever tier answered.
 
 	// Sniff the content type from the first bytes, then replay them in front of
 	// the remaining stream so nothing is lost.
 	head := make([]byte, 512)
-	n, readErr := io.ReadFull(object, head)
+	n, readErr := io.ReadFull(body, head)
 	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
-		_ = object.Close()
+		_ = body.Close()
 		return c.SendFile("./public/notfound.png")
 	}
 	head = head[:n]
@@ -296,10 +443,49 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	c.Set("Content-Type", contentTypeFor(head))
 	c.Status(http.StatusOK)
 	return c.SendStream(streamCloser{
-		Reader: io.MultiReader(bytes.NewReader(head), object),
-		closer: object,
-	}, int(stat.Size))
+		Reader: io.MultiReader(bytes.NewReader(head), body),
+		closer: body,
+	}, int(size))
 }
+
+// openObject returns the object's contents from whichever tier still holds it.
+//
+// MinIO is tried first and answers almost every request; the archive is the
+// fallback for objects the retention job has already removed locally. Nothing is
+// copied back into MinIO on the way out. Re-warming would make a single crawl of
+// old content silently refill the disk this design exists to keep empty, and it
+// would mean the retention job could no longer reason about age alone.
+//
+// The bucket-existence check in the caller still applies, so this never reaches
+// for the archive on behalf of a bucket MinIO does not have. Requests for keys
+// that never existed do cost one failed archive lookup each; the 404 caching in
+// nginx.conf is what keeps a scanner from turning that into a bill.
+func (i image) openObject(ctx context.Context, bucket, objectName string) (io.ReadCloser, int64, error) {
+	object, err := i.minioClient.GetObject(ctx, bucket, objectName, minio.GetObjectOptions{})
+	if err == nil {
+		// minio-go defers the request until the object is first used, so a
+		// missing key surfaces at Stat rather than at GetObject.
+		if stat, statErr := object.Stat(); statErr == nil && stat.Size > 0 {
+			return object, stat.Size, nil
+		}
+		_ = object.Close()
+	}
+
+	if i.archive == nil || !i.archive.Enabled() {
+		return nil, 0, errObjectMissing
+	}
+
+	rc, size, archiveErr := i.archive.Open(ctx, bucket, objectName)
+	if archiveErr != nil {
+		return nil, 0, errObjectMissing
+	}
+	return rc, size, nil
+}
+
+// errObjectMissing means neither tier has the object. The handler turns this
+// into the notfound placeholder; the distinction between "never existed" and
+// "gone from both" is not one a public read endpoint should expose.
+var errObjectMissing = errors.New("object not found in storage or archive")
 
 // streamCloser couples the reader handed to fasthttp with the underlying
 // closer, so closing the response stream also closes the MinIO object.
@@ -316,7 +502,6 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 
 	path := c.FormValue("path")
 	file, err := c.FormFile("file")
-	awsUpload := c.FormValue("aws_upload") == "true"
 
 	if file == nil || err != nil {
 		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!", nil)
@@ -364,10 +549,12 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
 	}
 
-	// Check if the AWS bucket exists if required
-	if awsUpload && !i.awsService.BucketExists(bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!", nil)
-	}
+	// No archive-side bucket check here any more. It used to reject the upload
+	// when the S3 bucket was missing, which is the wrong trade now that archiving
+	// is automatic: the object belongs in MinIO whether or not the cold tier is
+	// reachable, and refusing it would turn an archive misconfiguration into a
+	// total upload outage. A failed archive is reported in the response and
+	// leaves the object undeletable by the retention job, which is the safe end.
 
 	// Get the file buffer
 	fileBuffer, err := file.Open()
@@ -487,29 +674,15 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	url = strings.TrimSuffix(url, "/")
 	link := url + "/" + bucket + "/" + objectName
 
-	// S3 Upload
-	if awsUpload {
-		awsResult := "S3 Successfully Uploaded"
-		if _, err = i.awsService.S3PutObject(bucket, objectName, fileBuffer); err != nil {
-			awsResult = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
-		}
-		return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
-			"minioUpload": fmt.Sprintf("Minio Successfully Uploaded size %d", fileSize),
-			"minioResult": minioResult,
-			"awsUpload":   awsResult,
-			"awsResult":   awsResult,
-			"imageName":   imageName,
-			"objectName":  objectName,
-			"link":        link,
-		})
-	}
+	// Archive. The reader has just been drained by the MinIO upload, so it has to
+	// be rewound before the archive sees it.
+	archiveResult := i.rewindAndArchive(ctx, bucket, objectName, fileBuffer)
 
-	// Only Minio upload
 	return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
 		"minioUpload": fmt.Sprintf("Minio Successfully Uploaded size %d", fileSize),
 		"minioResult": minioResult,
-		"awsUpload":   "",
-		"awsResult":   "",
+		"awsUpload":   archiveResult,
+		"awsResult":   archiveResult,
 		"imageName":   imageName,
 		"objectName":  objectName,
 		"link":        link,
@@ -563,10 +736,8 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		}
 	}
 
-	// Check if the AWS bucket exists if required
-	if req.AWSUpload && !i.awsService.BucketExists(req.Bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!", nil)
-	}
+	// See UploadImage: a missing or unreachable archive bucket must not stop an
+	// upload that MinIO can serve perfectly well.
 
 	httpClient := validator.NewSafeHTTPClient(30 * time.Second)
 	res, err := httpClient.Get(req.URL)
@@ -640,30 +811,14 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	url = strings.TrimSuffix(url, "/")
 	link := url + "/" + req.Bucket + "/" + objectName
 
-	// S3 upload with glacier storage class
-	awsResult := "S3 Successfully Uploaded"
-	if req.AWSUpload {
-		contentReader.Seek(0, 0) // Reset reader to beginning
-		_, err := i.awsService.S3PutObject(req.Bucket, objectName, contentReader)
-		if err != nil {
-			awsResult = fmt.Sprintf("S3 Failed Uploaded %s", err.Error())
-		}
-		return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
-			"minioUpload": fmt.Sprintf("Minio Successfully Uploaded size %d", minioResult.Size),
-			"minioResult": minioResult,
-			"awsUpload":   awsResult,
-			"awsResult":   awsResult,
-			"imageName":   randomName + "." + extension,
-			"objectName":  objectName,
-			"link":        link,
-		})
-	}
+	// Archive. contentReader was drained by the MinIO upload above.
+	archiveResult := i.rewindAndArchive(ctx, req.Bucket, objectName, contentReader)
 
 	return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
 		"minioUpload": fmt.Sprintf("Minio Successfully Uploaded size %d", minioResult.Size),
 		"minioResult": minioResult,
-		"awsUpload":   "",
-		"awsResult":   "",
+		"awsUpload":   archiveResult,
+		"awsResult":   archiveResult,
 		"imageName":   randomName + "." + extension,
 		"objectName":  objectName,
 		"link":        link,
@@ -846,7 +1001,6 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 		pathPrefix = path[0]
 	}
 
-	awsUpload := form.Value["aws_upload"] != nil && form.Value["aws_upload"][0] == "true"
 	optimize := form.Value["optimize"] != nil && form.Value["optimize"][0] == "true"
 
 	// Check bucket existence
@@ -855,10 +1009,7 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusBadRequest, false, "Bucket not found", nil)
 	}
 
-	// Check AWS bucket if needed
-	if awsUpload && !i.awsService.BucketExists(bucketName) {
-		return service.Response(c, fiber.StatusBadRequest, false, "AWS bucket not found", nil)
-	}
+	// See UploadImage on why the archive bucket is no longer a precondition.
 
 	files := form.File["files"]
 	if len(files) == 0 {
@@ -968,19 +1119,17 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 				return
 			}
 
-			// Upload to AWS if requested
-			if awsUpload {
-				var awsReader io.Reader
-				if payload != nil {
-					awsReader = bytes.NewReader(payload)
-				} else {
-					_, _ = fileContent.Seek(0, 0)
-					awsReader = fileContent
-				}
-				_, err = i.awsService.S3PutObject(bucketName, objectName, awsReader)
-				if err != nil {
-					result["aws_error"] = err.Error()
-				}
+			// Archive. Unlike the single-file paths this one always did rewind
+			// before handing the reader over, so only the destination changes.
+			var archiveReader io.Reader
+			if payload != nil {
+				archiveReader = bytes.NewReader(payload)
+			} else {
+				_, _ = fileContent.Seek(0, io.SeekStart)
+				archiveReader = fileContent
+			}
+			if msg := i.archiveObject(context.Background(), bucketName, objectName, archiveReader); msg != "" {
+				result["archive"] = msg
 			}
 
 			result["success"] = true

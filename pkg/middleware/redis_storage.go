@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"errors"
 	"regexp"
 	"strings"
 	"time"
@@ -40,9 +41,19 @@ func NewRedisStorage() (*RedisStorage, error) {
 	return &RedisStorage{cache: cache}, nil
 }
 
-// Get retrieves a value from Redis
+// Get retrieves a value from Redis.
+//
+// fiber's Storage contract is that a key which does not exist returns
+// (nil, nil), not an error. That distinction matters here because this adapter
+// backs the rate limiter, where the first request from any client IP is a miss
+// by definition: passing the miss up as an error both violated the contract and
+// meant every rate-limited request produced a log line.
 func (r *RedisStorage) Get(key string) ([]byte, error) {
-	return r.cache.Get(sanitizeKey(key))
+	val, err := r.cache.Get(sanitizeKey(key))
+	if errors.Is(err, service.ErrCacheMiss) {
+		return nil, nil
+	}
+	return val, err
 }
 
 // Set stores a value in Redis

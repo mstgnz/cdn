@@ -30,6 +30,14 @@
   <policy domain="resource" name="time" value="60"/>
   <policy domain="resource" name="list-length" value="128"/>
 
+  <!-- Thread cap. This is a memory limit in disguise: ImageMagick defaults to
+       one OpenMP thread per core, each thread gets its own glibc malloc arena,
+       and freed pixel buffers stay in that arena instead of going back to the
+       OS. On an 8-core host that difference was 2.9 GB versus 200 MB of RSS per
+       replica. Kept here as well as in the Go code so an image run outside this
+       project's own boot path still gets the cap. -->
+  <policy domain="resource" name="thread" value="2"/>
+
   <!-- Block indirect file reads/writes: @file, path-based smuggling. -->
   <policy domain="path" rights="none" pattern="@*"/>
 

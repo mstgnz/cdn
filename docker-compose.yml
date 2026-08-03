@@ -8,6 +8,14 @@ services:
     # image (see .dockerignore, which now excludes .env from the build context).
     env_file:
       - .env
+    # Cap each replica so that a runaway decode is contained by the container's
+    # own cgroup. Without a limit the kernel OOM-killer works host-wide and picks
+    # the largest process, which is as likely to be MinIO (and every object it
+    # serves) as the replica that actually misbehaved. The default suits the
+    # 3-replica layout on a host with roughly 12 GB; raise it in .env for larger
+    # images or more concurrency.
+    mem_limit: ${API_MEM_LIMIT:-2500m}
+    memswap_limit: ${API_MEMSWAP_LIMIT:-3g}
     deploy:
       mode: replicated
       replicas: 3

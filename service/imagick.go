@@ -27,6 +27,19 @@ type ImageService struct {
 	MinioClient *minio.Client
 }
 
+// ImagickThreadLimit reports the configured OpenMP thread cap. It lives here
+// rather than being read twice because two places need the same number: the
+// MAGICK_THREAD_LIMIT export that has to run before genesis, and the resource
+// limit applied after it. A value below 1 would leave ImageMagick to pick its
+// own default, which is the behaviour this exists to prevent.
+func ImagickThreadLimit() int {
+	n := config.GetEnvAsIntOrDefault("IMAGICK_THREAD_LIMIT", 2)
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 // ApplyImagickResourceLimits sets process-wide ImageMagick resource limits so a
 // decompression bomb or an oversized resize target cannot exhaust host memory,
 // disk or CPU. MagickSetResourceLimit is global despite hanging off a wand.
@@ -37,6 +50,17 @@ type ImageService struct {
 // Unit note: the C API takes bytes for MEMORY/MAP/DISK, pixels for AREA and
 // seconds for TIME. We log the effective values so they can be eyeballed on the
 // first boot.
+//
+// The thread limit is the one that decides whether this process stays inside its
+// memory budget at all. ImageMagick defaults to one OpenMP thread per core, and
+// its pixel buffers come from malloc rather than the Go heap: glibc opens a
+// per-thread arena and effectively never returns that memory to the OS, so RSS
+// ratchets upward burst after burst until the host OOM-kills the process. A
+// production deployment on 8 cores held 2.5-2.9 GB per replica at idle with the
+// default; capping threads at 2 brought that to ~200 MB. See also
+// MALLOC_ARENA_MAX in the dockerfile, which bounds the same growth from the
+// allocator side, and the MAGICK_THREAD_LIMIT export in cmd/main.go, which has
+// to happen before genesis because that is when the OpenMP pool is built.
 func ApplyImagickResourceLimits() {
 	mw := imagick.NewMagickWand()
 	defer mw.Destroy()
@@ -51,6 +75,7 @@ func ApplyImagickResourceLimits() {
 		{"area", imagick.RESOURCE_AREA, int64(config.GetEnvAsIntOrDefault("IMAGICK_AREA_LIMIT_MP", 256)) * 1000 * 1000},
 		{"disk", imagick.RESOURCE_DISK, int64(config.GetEnvAsIntOrDefault("IMAGICK_DISK_LIMIT_MB", 2048)) * 1024 * 1024},
 		{"time", imagick.RESOURCE_TIME, int64(config.GetEnvAsIntOrDefault("IMAGICK_TIME_LIMIT_SEC", 60))},
+		{"thread", imagick.RESOURCE_THREAD, int64(ImagickThreadLimit())},
 	}
 
 	for _, l := range limits {

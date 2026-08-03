@@ -34,7 +34,9 @@ type AwsService interface {
 	GlacierInventoryRetrieval(vaultName string) (*glacier.InitiateJobOutput, error)
 	GlacierDownloadToMinio(vaultName, jobId, targetBucket, targetPath string) error
 	GlacierDownloadToLocal(vaultName, jobId, localPath string) error
-	S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error)
+	S3PutObject(ctx context.Context, bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error)
+	S3HeadObject(ctx context.Context, bucketName, objectName string) (*s3.HeadObjectOutput, error)
+	S3GetObject(ctx context.Context, bucketName, objectName string) (*s3.GetObjectOutput, error)
 	ListBuckets() ([]s3types.Bucket, error)
 	BucketExists(bucketName string) bool
 	DeleteObjects(bucketName string, objectKeys []string) error
@@ -64,14 +66,48 @@ func NewAwsService() AwsService {
 	}
 }
 
-func (as *awsService) S3PutObject(bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error) {
+// S3PutObject stores an object in the archive tier.
+//
+// The storage class is Glacier *Instant* Retrieval, not the plain Glacier class
+// this used to use. Both cost about the same to store, but plain Glacier
+// (Flexible Retrieval) cannot be read with a GET at all: it needs a RestoreObject
+// call and then minutes to hours before a temporary copy becomes readable. That
+// is unusable behind a CDN URL, where the whole point is that an object aged out
+// of MinIO is still served on request. Instant Retrieval answers a normal GET in
+// milliseconds, which is what makes ServeArchived possible.
+//
+// Two AWS billing rules are worth knowing before tuning this: objects under
+// 128 KB are billed as 128 KB, and deleting before 90 days is billed as 90 days.
+func (as *awsService) S3PutObject(ctx context.Context, bucketName string, objectName string, fileBuffer io.Reader) (*manager.UploadOutput, error) {
 	client := s3.NewFromConfig(as.cfg)
 	uploader := manager.NewUploader(client)
-	return uploader.Upload(context.TODO(), &s3.PutObjectInput{
+	return uploader.Upload(ctx, &s3.PutObjectInput{
 		Bucket:       aws.String(bucketName),
 		Key:          aws.String(objectName),
 		Body:         fileBuffer,
-		StorageClass: s3types.StorageClassGlacier,
+		StorageClass: s3types.StorageClassGlacierIr,
+	})
+}
+
+// S3HeadObject reports an object's metadata without transferring its body. This
+// is what makes deleting from MinIO safe: the retention job proves the archived
+// copy is there, and how large it is, before removing the local one.
+func (as *awsService) S3HeadObject(ctx context.Context, bucketName, objectName string) (*s3.HeadObjectOutput, error) {
+	client := s3.NewFromConfig(as.cfg)
+	return client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectName),
+	})
+}
+
+// S3GetObject opens an archived object for reading. The caller owns the returned
+// Body and must close it. Glacier Instant Retrieval serves this like any other
+// S3 class, so there is no restore step and no job to poll.
+func (as *awsService) S3GetObject(ctx context.Context, bucketName, objectName string) (*s3.GetObjectOutput, error) {
+	client := s3.NewFromConfig(as.cfg)
+	return client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectName),
 	})
 }
 

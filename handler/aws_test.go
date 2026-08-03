@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/gofiber/fiber/v2"
 	"github.com/mstgnz/cdn/service"
@@ -51,7 +53,13 @@ func (m *mockAwsService) GlacierInventoryRetrieval(string) (*glacier.InitiateJob
 }
 func (m *mockAwsService) GlacierDownloadToMinio(string, string, string, string) error { return nil }
 func (m *mockAwsService) GlacierDownloadToLocal(string, string, string) error         { return nil }
-func (m *mockAwsService) S3PutObject(string, string, io.Reader) (*manager.UploadOutput, error) {
+func (m *mockAwsService) S3PutObject(context.Context, string, string, io.Reader) (*manager.UploadOutput, error) {
+	return nil, nil
+}
+func (m *mockAwsService) S3HeadObject(context.Context, string, string) (*s3.HeadObjectOutput, error) {
+	return nil, nil
+}
+func (m *mockAwsService) S3GetObject(context.Context, string, string) (*s3.GetObjectOutput, error) {
 	return nil, nil
 }
 func (m *mockAwsService) DeleteObjects(string, []string) error { return nil }

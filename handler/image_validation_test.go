@@ -16,7 +16,7 @@ import (
 // paths under test reject the request before any MinIO call, so the nil client
 // is never dereferenced.
 func newImageApp() *fiber.App {
-	h := NewImage(nil, service.NewAwsService(), &service.ImageService{})
+	h := NewImage(nil, service.NewAwsService(), service.NewArchive(service.NewAwsService()), &service.ImageService{})
 	app := fiber.New()
 	app.Post("/upload", h.UploadImage)
 	app.Post("/resize", h.ResizeImage)

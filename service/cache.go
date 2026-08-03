@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -51,18 +52,34 @@ func NewCacheService() (CacheService, error) {
 	}, nil
 }
 
+// ErrCacheMiss reports that a key simply is not in the cache. It is the single
+// most common outcome on this service (the rate limiter looks up a key per
+// client IP, and the first request from any IP misses by definition), so callers
+// need to be able to tell it apart from Redis actually being broken. Match it
+// with errors.Is.
+var ErrCacheMiss = errors.New("cache: key not found")
+
 func (c *redisCache) Get(key string) ([]byte, error) {
 	start := time.Now()
 	ctx := context.Background()
 	var err error
+	var miss bool
 
 	defer func() {
 		duration := time.Since(start).Seconds()
+
+		// A miss and a failure are different events and must not share a label:
+		// with both counted as "miss" a Redis outage reads as a cold cache on the
+		// dashboards instead of an incident. Only hits and misses feed the ratio;
+		// a failed lookup is neither.
 		status := "hit"
-		if err != nil {
+		switch {
+		case miss:
 			status = "miss"
 			atomic.AddInt64(&c.misses, 1)
-		} else {
+		case err != nil:
+			status = "error"
+		default:
 			atomic.AddInt64(&c.hits, 1)
 		}
 
@@ -78,14 +95,18 @@ func (c *redisCache) Get(key string) ([]byte, error) {
 		}
 		observability.CacheHitRatio.WithLabelValues("get").Set(ratio)
 
-		if err != nil {
+		// Only a real failure is worth an error line. Logging misses here buried
+		// the log under one ERROR per rate-limited request, which is both noise
+		// and a steady stream of client IPs written to disk for no reason.
+		if err != nil && !miss {
 			c.logger.Error().Err(err).Str("key", key).Msg("Cache get failed")
 		}
 	}()
 
 	val, err := c.client.Get(ctx, key).Bytes()
-	if err == redis.Nil {
-		return nil, fmt.Errorf("key not found: %s", key)
+	if errors.Is(err, redis.Nil) {
+		miss = true
+		return nil, fmt.Errorf("%w: %s", ErrCacheMiss, key)
 	}
 
 	if err == nil {

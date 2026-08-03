@@ -151,6 +151,15 @@ RUN ldconfig /usr/local/lib
 COPY docker/policy.xml /etc/ImageMagick/policy.xml
 ENV MAGICK_CONFIGURE_PATH=/etc/ImageMagick
 
+# Bound the number of glibc malloc arenas. ImageMagick allocates its pixel
+# buffers through malloc rather than the Go heap, and glibc gives each thread its
+# own arena which it then holds on to: freed buffers stay charged to the process
+# and RSS only ever climbs. Left at the default, three replicas on an 8-core host
+# grew to 2.5-2.9 GB each at idle and were repeatedly OOM-killed. Set at the image
+# level so a plain `docker run` of this image is protected too, not only the
+# compose deployment.
+ENV MALLOC_ARENA_MAX=2
+
 WORKDIR /app
 COPY --from=build /app/main ./main
 COPY --from=build /app/public ./public

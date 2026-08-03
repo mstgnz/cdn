@@ -4,7 +4,108 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-08-03
+
 ### Fixed
+
+- **Production ran out of memory roughly seven times a day.** Three replicas on a
+  12 GB host held 2.5-2.9 GB each while idle and were killed by the host OOM
+  killer; `RestartCount` had reached 299. Docker reported `OOMKilled=false`
+  throughout, because it only flags a cgroup-limit kill and this was host-wide, so
+  the restarts looked spontaneous. Two causes, both now closed:
+  - ImageMagick starts one OpenMP thread per core by default, and its pixel
+    buffers come from `malloc` rather than the Go heap. glibc gives each thread
+    its own arena and effectively never returns it to the OS, so resident memory
+    only ratcheted upward. `IMAGICK_THREAD_LIMIT` (default 2) now caps the thread
+    count in `ApplyImagickResourceLimits`, is exported as `MAGICK_THREAD_LIMIT`
+    before ImageMagick's genesis (which is when the pool is built, so setting it
+    afterwards is too late), and is repeated in `docker/policy.xml` for images run
+    outside this project's boot path. `MALLOC_ARENA_MAX=2` in the dockerfile bounds
+    the same growth from the allocator side. The measured effect on the affected
+    deployment was 2.9 GB down to roughly 200 MB per replica, and 108 threads down
+    to 13.
+  - The `GET` resize path had no concurrency bound at all. `OPTIMIZE_MAX_CONCURRENT`
+    guarded uploads only, so a gallery page requesting twenty thumbnails started
+    twenty simultaneous full decodes, each holding a whole raster. `RESIZE_MAX_CONCURRENT`
+    (default 4) now bounds them. A request that finds every slot busy waits up to
+    `RESIZE_QUEUE_TIMEOUT_SEC`, and only then serves the original unresized,
+    marked `Cache-Control: no-store` so that a momentary overload cannot leave a
+    full-size image cached under a `?width=` URL for the cache's lifetime.
+- **Archived objects were empty.** `S3PutObject` was handed the same reader the
+  MinIO upload had just drained, with no rewind in between, so every object the
+  archive received was zero bytes. Nothing surfaced it: the upload still reported
+  success, and nothing ever read the archive back. Both single-file upload paths
+  now rewind before archiving; `BatchUpload` already did.
+- **Every cache miss was logged as an error.** `redis.Nil` means "key not
+  present", which on this service is the common case: the rate limiter looks up a
+  key per client IP and the first request from any IP misses by definition. The
+  result was one `ERROR` line per rate-limited request, each recording a client
+  IP, drowning the log. Misses are now counted separately from failures in both
+  the logs and the `cache_operations` metric, where they had shared the `miss`
+  label and made a Redis outage read as a cold cache.
+- **The rate limiter's storage adapter violated fiber's contract.** `Storage.Get`
+  must answer `(nil, nil)` for an absent key; it was returning an error, which is
+  what produced the log flood above.
+- **nginx asked the upstream to upgrade every connection.** `proxy_set_header
+  Connection "upgrade"` was set unconditionally rather than from a `map` on
+  `$http_upgrade`, so every ordinary `GET` announced a protocol switch and the
+  `keepalive 32` pool was never used. Every request paid for a fresh TCP
+  connection.
+- **The image cache in `nginx.conf` did nothing.** `proxy_cache_valid` and
+  `proxy_cache_use_stale` were configured without a `proxy_cache` zone, which
+  silently disables them, so every request reached the Go service and
+  `X-Cache-Status` was always empty. A zone is now declared and used.
+
+### Added
+
+- **Cold-storage archive with instant reads.** When AWS credentials are
+  configured, every upload is mirrored to S3 and objects MinIO no longer holds are
+  streamed straight from the archive, so a URL keeps working after its object has
+  been aged out locally.
+  - The storage class is now **Glacier Instant Retrieval** rather than Glacier
+    Flexible Retrieval. Both cost about the same to store, but Flexible Retrieval
+    cannot be read with a `GET` at all: it needs a `RestoreObject` call and
+    minutes to hours before a temporary copy appears. That is unusable behind a
+    CDN URL. Instant Retrieval answers a normal `GET` in milliseconds.
+  - Objects are addressed by the same `(bucket, key)` pair as in MinIO, so nothing
+    has to be indexed to find one again. `ARCHIVE_BUCKET` optionally collapses
+    every bucket into one under a `<minio-bucket>/` prefix, which is easier to
+    administer once there are more than a handful.
+  - Nothing is copied back into MinIO on a cold read. Re-warming would let a
+    single crawl of old content refill the disk this exists to keep empty.
+  - Worth knowing before tuning: AWS bills objects under 128 KB as 128 KB in this
+    class, and bills a delete before 90 days as 90 days.
+- **Retention job.** Deletes MinIO objects older than `RETENTION_DAYS`, and only
+  those the archive is confirmed to hold at a matching size. It is off by default
+  (`RETENTION_ENABLED=false`) and reports without deleting the first time it is
+  switched on (`RETENTION_DRY_RUN=true`), because deleting files is the one
+  irreversible thing this service does. It refuses to start without an archive,
+  never deletes from the archive, and keeps (with a warning) anything it cannot
+  verify. The size comparison is not redundant with an existence check: it is
+  exactly what would have caught the zero-byte archive bug above.
+- **Per-container memory limits** in `docker-compose.yml` (`API_MEM_LIMIT`,
+  default 2500m). Without a limit the kernel's OOM killer works host-wide and
+  picks the largest process, which is as likely to be MinIO, and every object it
+  serves, as the replica that actually misbehaved.
+
+### Changed
+
+- **Archiving is no longer requested per upload.** The `aws_upload` form field and
+  JSON property are accepted and ignored; whether a deployment archives is now a
+  property of the deployment, on when AWS credentials are present and off when
+  they are not. An opt-in flag was safe while MinIO kept everything forever, but
+  it stops being safe once the retention job can remove local copies: a caller who
+  forgot the flag would have left the only copy of an object on the disk being
+  swept. The field stays in the request types so existing clients keep working
+  rather than failing validation.
+- **A missing or unreachable archive no longer fails an upload.** The
+  `BucketExists` precondition on the archive side is gone from all three upload
+  paths. The object belongs in MinIO whether or not cold storage is reachable, and
+  refusing it would turn an archive misconfiguration into a total upload outage.
+  A failed archive write is reported in the response and leaves the object
+  ineligible for retention, which is the safe end.
+
+### Fixed (previously unreleased)
 
 - **Path-based resize served the original image.** `/{bucket}/w:{width}/h:{height}/{path}`
   and its width-only and height-only variants are routed and documented, but

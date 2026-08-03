@@ -369,6 +369,7 @@ For detailed instructions, see [Kubernetes Deployment Guide](k8s/README.md)
 
 For detailed information, please refer to:
 
+- [Cold Storage Archive](docs/archive.md) — keep everything in S3, keep only the recent window on local disk
 - [Testing Guide](docs/testing.md)
 - [Troubleshooting Guide](docs/troubleshooting.md)
 - [Migration Guide](docs/migration.md)
