@@ -175,11 +175,17 @@ func main() {
 	tiering := service.NewTiering(objectStore, archive)
 	archiveHandler = handler.NewArchiveHandler(tiering)
 
-	// Initialize cache service
+	// Initialize cache service.
+	//
+	// A failure here is reported and then ignored, because NewCacheService hands
+	// back a working client either way and go-redis reconnects on its own. The
+	// service is deliberately NOT discarded on error: doing so used to make a few
+	// seconds of Redis RDB loading permanent for the life of the process, since
+	// nothing ever retried. Only an unparseable REDIS_URL yields a nil service,
+	// and the health check handles that.
 	cacheService, err := service.NewCacheService()
 	if err != nil {
-		logger.Error().Err(err).Msg("Failed to initialize cache service, continuing without cache")
-		cacheService = nil
+		logger.Warn().Err(err).Msg("cache service unavailable at boot; it will reconnect on its own when Redis accepts connections")
 	}
 
 	// Initialize handlers

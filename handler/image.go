@@ -57,6 +57,11 @@ type ImageProcessRequest struct {
 	Height      uint
 	ContentType string
 	Filename    string
+
+	// Result holds the resized bytes once processImage has run. It is written by
+	// the worker goroutine and read by whoever submitted the job, which is safe
+	// only because the submitter waits on the job's response channel first.
+	Result []byte
 }
 
 // UploadUrlRequest represents the request body for URL-based uploads.
@@ -948,19 +953,21 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 	// Create response channel
 	respChan := make(chan error, 1)
 
+	// Built outside the task so the resized bytes survive it. The task writes
+	// req.Result and this goroutine reads it only after receiving on respChan,
+	// which is what orders the two accesses.
+	req := &ImageProcessRequest{
+		File:        fileContent,
+		Width:       uint(width),
+		Height:      uint(height),
+		ContentType: file.Header.Get("Content-Type"),
+		Filename:    file.Filename,
+	}
+
 	// Create and submit job
 	job := worker.Job{
-		ID: uuid.New().String(),
-		Task: func() error {
-			req := &ImageProcessRequest{
-				File:        fileContent,
-				Width:       uint(width),
-				Height:      uint(height),
-				ContentType: file.Header.Get("Content-Type"),
-				Filename:    file.Filename,
-			}
-			return processImage(req, i)
-		},
+		ID:       uuid.New().String(),
+		Task:     func() error { return processImage(req, i) },
 		Response: respChan,
 	}
 
@@ -973,7 +980,16 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 		return service.Response(c, fiber.StatusInternalServerError, false, "Image processing failed", nil)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "Image processed successfully", nil)
+	if len(req.Result) == 0 {
+		return service.Response(c, fiber.StatusInternalServerError, false, "Image processing produced no output", nil)
+	}
+
+	// Answer with the image, which is what a caller posting a file and a target
+	// size is asking for. This endpoint used to return a JSON success and no
+	// bytes, so the work was done and thrown away.
+	c.Set("Content-Length", strconv.Itoa(len(req.Result)))
+	c.Set("Content-Type", inertContentType(http.DetectContentType(req.Result)))
+	return c.Send(req.Result)
 }
 
 // processBatch handles batch processing of items
@@ -999,15 +1015,24 @@ func (i *image) processBatch(items []batch.BatchItem) []batch.BatchItem {
 	return items
 }
 
-// processImage handles the actual image processing
+// processImage resizes req.File and stores the output in req.Result.
+//
+// Keeping the result was the whole point and it used to be dropped: the resized
+// bytes were assigned to a local, checked for nil, and discarded, so /resize
+// spent the CPU and then answered with a JSON "success" and no image. Callers
+// that do not want the bytes can ignore Result; callers that do would otherwise
+// have no way to get them.
 func processImage(req *ImageProcessRequest, i *image) error {
-	if service.IsImageFile(req.Filename) {
-		resized := i.imageService.ImagickResize(req.File, req.Width, req.Height)
-		if resized == nil {
-			return fmt.Errorf("image processing failed")
-		}
+	if !service.IsImageFile(req.Filename) {
+		req.Result = req.File
 		return nil
 	}
+
+	resized := i.imageService.ImagickResize(req.File, req.Width, req.Height)
+	if resized == nil {
+		return fmt.Errorf("image processing failed")
+	}
+	req.Result = resized
 	return nil
 }
 

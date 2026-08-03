@@ -106,6 +106,16 @@ func (h *HealthChecker) checkCacheHealth(ctx context.Context) string {
 		observability.LastHealthCheckTimestamp.WithLabelValues("cache").Set(float64(time.Now().Unix()))
 	}()
 
+	// A nil cache means NewCacheService could not build a client at all, which
+	// only happens for a REDIS_URL that cannot be parsed. Report it instead of
+	// dereferencing: CacheService is an interface, so a nil one panics on the
+	// first method call, and this runs behind the recover middleware where that
+	// surfaces as a bare 500 with no indication of the cause.
+	if h.cache == nil {
+		observability.ServiceHealth.WithLabelValues("cache").Set(0)
+		return "unhealthy: cache not configured"
+	}
+
 	testKey := "health:test"
 	testValue := []byte("test")
 

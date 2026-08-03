@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A slow Redis start left replicas permanently without a cache.** Redis replays
+  its RDB before it will answer commands, so on a cold start of the whole stack
+  the API pings while Redis is still loading and gets back `LOADING Redis is
+  loading the dataset in memory`. `NewCacheService` returned an error for that,
+  and `cmd/main.go` responded by discarding the client and setting the service to
+  `nil`. Nothing ever retried, so a few seconds of startup became the state of
+  the process until somebody restarted it. On the 2026-08-03 deploy two of three
+  replicas came up this way.
+
+  Discarding the client was never necessary: go-redis dials lazily per command
+  and reconnects on its own, so a client whose first ping failed still works the
+  moment Redis accepts connections. `NewCacheService` now pings up to three times
+  with backoff and, if that still fails, returns the usable service *alongside*
+  the error. A nil service is now reserved for a `REDIS_URL` that cannot be
+  parsed, which is configuration that can never work.
+
+- **`/health` returned 500 with no explanation when the cache was missing.**
+  `CacheService` is an interface, so the `nil` above was not caught by any check;
+  `checkCacheHealth` dereferenced it and panicked, and the recover middleware
+  turned that into a bare 500. It now reports `unhealthy: cache not configured`,
+  which still fails the core health check but says why.
+
+- **`POST /resize` did the work and threw the result away.** It decoded the
+  upload, resized it, checked the output was not nil, discarded it, and answered
+  with a JSON `Image processed successfully` carrying no image. Both `docs/api.md`
+  and the OpenAPI spec already documented the endpoint as returning the resized
+  image directly, so this was the code drifting from its own contract rather than
+  an undocumented design. `processImage` now stores the output on the request and
+  the handler sends those bytes with a sniffed, inert `Content-Type`.
+
 ## [1.11.0] - 2026-08-04
 
 1.10.0 tightened upload validation. This release fixes the parts of it that

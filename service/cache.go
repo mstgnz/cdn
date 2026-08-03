@@ -30,6 +30,38 @@ type redisCache struct {
 	misses int64
 }
 
+// cacheConnectAttempts and cacheConnectTimeout bound the boot ping. Redis
+// replays its RDB before it will answer commands, so on a cold start of the
+// whole stack the API is dialing while Redis is still loading and the first ping
+// comes back "LOADING Redis is loading the dataset in memory". That is a
+// starting service, not a broken one, and retrying briefly gets a clean start
+// instead of a warning operators learn to ignore.
+//
+// The timeout is deliberately short. Retrying is a cosmetic win, not a
+// functional one: the service is returned and works either way, so blocking boot
+// on an optional dependency has to stay cheap. Worst case here is roughly 7.5
+// seconds (three 2s pings plus 1.5s of backoff) and only when Redis is a black
+// hole; the case this exists for answers immediately with a LOADING error, which
+// costs about 1.5 seconds in total.
+const (
+	cacheConnectAttempts = 3
+	cacheConnectTimeout  = 2 * time.Second
+)
+
+// NewCacheService builds the cache client. It returns a usable CacheService even
+// when the connection cannot be established, alongside an error describing why.
+//
+// The two return values are independent on purpose. A nil service is reserved
+// for configuration that can never work (an unparseable REDIS_URL); a live
+// server that is merely unreachable right now yields a usable service and an
+// error. Callers should log the error and keep the service.
+//
+// This matters because the client does not dial here. go-redis connects lazily
+// per command from its own pool and reconnects on its own, so a client whose
+// first ping failed still works the moment Redis accepts connections. Discarding
+// it converted a few seconds of RDB loading into a process that ran without a
+// cache until someone restarted it, which is exactly what happened in production
+// on 2026-08-03: two of three replicas came up cacheless and stayed that way.
 func NewCacheService() (CacheService, error) {
 	redisURL := config.GetEnvOrDefault("REDIS_URL", "redis://cdn-redis:6379")
 
@@ -39,17 +71,25 @@ func NewCacheService() (CacheService, error) {
 	}
 
 	client := redis.NewClient(opt)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := client.Ping(ctx).Err(); err != nil {
-		return nil, fmt.Errorf("failed to connect to Redis: %v", err)
-	}
-
-	return &redisCache{
+	service := &redisCache{
 		client: client,
 		logger: observability.Logger(),
-	}, nil
+	}
+
+	for attempt := 1; attempt <= cacheConnectAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), cacheConnectTimeout)
+		err = client.Ping(ctx).Err()
+		cancel()
+
+		if err == nil {
+			return service, nil
+		}
+		if attempt < cacheConnectAttempts {
+			time.Sleep(time.Duration(attempt) * 500 * time.Millisecond)
+		}
+	}
+
+	return service, fmt.Errorf("failed to connect to Redis after %d attempts: %v", cacheConnectAttempts, err)
 }
 
 // ErrCacheMiss reports that a key simply is not in the cache. It is the single
