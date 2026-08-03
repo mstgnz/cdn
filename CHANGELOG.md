@@ -4,6 +4,99 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-08-04
+
+1.10.0 tightened upload validation. This release fixes the parts of it that
+rejected real files, which is the failure operators work around by turning
+validation off entirely.
+
+### Fixed
+
+- **HEIC, MP4, MOV, 3GP and TIFF uploads were rejected under extensions the
+  allowlist accepted.** These are ISO base media files (ISO/IEC 14496-12) and
+  none of them has a fixed signature at offset 0. What identifies them is the
+  literal `ftyp` at offset 4, preceded by that box's *length*. The magic number
+  table treated the length as part of the signature, pinning `0x18` for HEIC and
+  MP4 and `0x14` for 3GP, so a file passed only when its first box happened to be
+  exactly 24 or 20 bytes long. ImageMagick writes `0x1C` for HEIC, ffmpeg writes
+  `0x20` for MP4, QuickTime writes `0x14` with a `qt` brand, and iPhone HEIC
+  varies by device. All were refused as `INVALID_FILE_CONTENT` while
+  `AllowedFileFormats` said the extension was fine, which is worse than not
+  supporting the format: the upload fails talking about content while the
+  documentation talks about extensions. TIFF had no entry at all and could never
+  pass in either byte order.
+
+  `isISOBaseMedia` now identifies the family structurally, by `ftyp` at offset 4,
+  and TIFF is recognised as `II*\0` and `MM\0*`. This is a container check, not a
+  codec check, and it widens nothing: the extension allowlist is what keeps
+  executable types out and it is unchanged.
+
+- **The MIME type gate rejected valid uploads and stopped nothing.**
+  `ValidateFile` checked the multipart part's `Content-Type` against
+  `AllowedMimeTypes`, but that string is written by the client, so as a gate it
+  never had teeth. `application/octet-stream` has to appear on any such list
+  because mobile clients send it for everything, and that one entry was a
+  documented bypass: a payload announced as octet-stream sailed through. What it
+  did do was refuse a valid PNG whose part carried no `Content-Type` header at
+  all, and a valid PDF announced as `application/x-pdf`. Callers that pass a
+  browser-supplied type straight through hit this routinely, and the only
+  workaround available to an operator was `VALIDATE_FILE=false`, which turns off
+  the two checks that were doing the work. A gate whose failure mode is "disable
+  all validation" is worse than no gate.
+
+  The check is removed. `AllowedMimeTypes` is kept as documentation of what
+  callers typically send; nothing reads it.
+
+- **An empty `config/tokens.json` stopped the service from booting.** The line
+  that matters is between "no scoped tokens" and "scoped tokens that cannot be
+  read", not between "no file" and "some file". Missing, empty, `{}` and
+  `{"buckets": []}` now all boot with zero scoped tokens, because each is an
+  operator saying there are none yet and none of them can be hiding a credential.
+  Content that cannot be parsed, or an entry that fails validation, still stops
+  boot: there the operator wrote definitions and believes they are active, so
+  starting with fewer credentials than configured would surface as callers
+  getting "invalid token" with nothing to explain it. The general `TOKEN` is
+  unaffected either way, validated separately and accepted on every route
+  whatever this file contains.
+
+- **Placeholder AWS credentials switched the archive on.** Copying
+  `.env.example` left `AWS_ACCESS_KEY_ID=your-aws-key` in place, which is not
+  empty, so the archive reported itself enabled and then failed against a
+  destination that never existed. The shipped placeholders now count as
+  unconfigured alongside the existing empty check.
+
+### Added
+
+- **`MINIO_VERSION` pins the MinIO server image.** Blank still means `latest`,
+  which is fine for a fresh install and not fine for an existing one: MinIO
+  migrates its on-disk format forward and never backward, so an accidental jump
+  is not something you undo by changing the tag back.
+
+- **The archive destination is verified at boot** when archiving is enabled.
+  Credentials that look valid stay looking valid until something uses them;
+  `VerifyDestination` makes one real call and logs the result. It runs off the
+  startup path on purpose, so boot never waits on AWS and a transient outage
+  during a restart cannot disable archiving for the life of the process. It
+  reports only and changes no behaviour.
+
+### Changed
+
+- `.env.example` is ordered by how much attention each setting needs, from
+  "nothing works until this is right" down to values that can be ignored for
+  years, with the reasoning for the non-obvious ones written beside them.
+
+- The example host nginx config (`cdn.conf`) is rewritten: TLS and redirects, the
+  proxy headers the service actually reads, a `log_format` that records the
+  vhost, a cache zone, and an `expires` map that respects a `no-store` from
+  upstream rather than overwriting it. Caching in front of this service means a
+  deleted object keeps being served until its entry expires, and the open source
+  nginx build has no purge.
+
+- `docs/api.md` describes two upload gates rather than three, and its extension
+  table no longer lists `tif`, `ico` and `raw` as uploadable. Those are treated
+  as images when deciding whether a stored object can be resized, but they are
+  not on the upload allowlist.
+
 ## [1.10.0] - 2026-08-03
 
 ### Security

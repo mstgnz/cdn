@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: CDN API Documentation
-  version: 1.10.0
+  version: 1.11.0
   description: |
     CDN Service is a high-performance, cloud-native content delivery solution built with Go. This service combines modern architectural patterns with enterprise-grade features to offer:
 
@@ -185,9 +185,17 @@ paths:
       summary: File upload
       description: |
         Single file upload endpoint.
-        - Maximum file size: 100MB
-        - Supported formats: JPG, PNG, GIF, WebP
-        - Automatic format optimization
+        - Maximum file size: 100MB (`MAX_FILE_SIZE`)
+        - Images: jpg, jpeg, png, gif, webp, bmp, tiff, svg, heic, heif, avif
+        - Documents: pdf, doc, docx, xls, xlsx, ppt, pptx
+        - Text and data: csv, sql
+        - Archives: zip
+        - Audio and video: mp3, wav, mp4, mov, 3gp, avi
+        - Two validation gates, neither client-controlled: the extension
+          allowlist above, and the file's own leading bytes. The multipart
+          `Content-Type` is not one of them; it is a string the caller writes and
+          was dropped as a gate in 1.11.0. See docs/api.md.
+        - Optimization is opt-in per request via `optimize=true`, not automatic.
       tags:
         - File
       security:
