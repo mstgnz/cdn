@@ -103,6 +103,34 @@ func TestLoadBucketTokensMissingFileIsNotAnError(t *testing.T) {
 	}
 }
 
+// TestLoadBucketTokensEmptyDefinitionsIsNotAnError separates the two ways a
+// token file can carry no entries from the one way it can be wrong. A file left
+// in place with its list emptied, or created ahead of the tokens that will go in
+// it, is an operator saying "no scoped tokens yet" and must boot exactly like no
+// file at all. Only content that cannot be read as a token file stops the
+// service, because there the operator's intent is unknown and guessing at it
+// would mean starting up with fewer credentials than they think are configured.
+func TestLoadBucketTokensEmptyDefinitionsIsNotAnError(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty list":       `{"buckets":[]}`,
+		"absent key":       `{}`,
+		"null list":        `{"buckets":null}`,
+		"whitespace only":  "  \n\t",
+		"empty json array": `{"buckets": [
+		]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			count, err := LoadBucketTokens(writeTokenFile(t, body))
+			if err != nil {
+				t.Fatalf("file with no definitions rejected: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("count = %d, want 0", count)
+			}
+		})
+	}
+}
+
 func TestLoadBucketTokensValid(t *testing.T) {
 	path := writeTokenFile(t, `{"buckets":[
 		{"bucket":"tedarik","token":"`+validSecret+`","label":"supply app"},

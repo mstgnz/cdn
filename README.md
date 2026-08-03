@@ -191,8 +191,12 @@ curl -H "Authorization: Bearer your-token" ...  # use
 
 #### Bucket-scoped tokens
 
-A bucket-scoped token authorizes writes to exactly one bucket. Its wire format is
-`<bucket>:<token>`:
+A bucket-scoped token authorizes writes to exactly one bucket. It is an addition,
+never a replacement: the general `TOKEN` stays valid on every route whether this
+file holds three entries, none, or does not exist. Adding scoped tokens narrows
+what *they* can reach, not what the general token can.
+
+Its wire format is `<bucket>:<token>`:
 
 ```bash
 curl -X POST http://localhost:9090/upload \
@@ -235,9 +239,16 @@ Security notes:
 - `config/tokens.json` is git-ignored and docker-ignored. It is mounted read-only
   at runtime and never baked into an image layer.
 - Tokens must be at least 32 characters; a bucket name must be 3-63 characters of
-  lowercase letters, digits or `-`. An invalid file stops boot rather than
-  silently dropping credentials. A missing file is fine and means the general
-  token is the only credential.
+  lowercase letters, digits or `-`.
+- The file is optional, and so is its content. Missing, empty, `{}`,
+  `{"buckets": []}` all boot normally with zero scoped tokens, because each of
+  those says "none configured yet" and none of them can be hiding a credential.
+  Content that cannot be parsed, or an entry that fails validation, stops boot
+  instead: there the definitions exist and an operator believes they are live, so
+  starting with fewer credentials than configured would surface as callers
+  getting "invalid token" with nothing to explain it. Copying the template
+  unedited lands in this second group on purpose, since `REPLACE_ME` is under the
+  32-character floor.
 - Secrets are hashed in memory after load and never appear in logs or responses.
 - There is no runtime endpoint that mints or revokes tokens: with three API
   replicas behind nginx such writes would not propagate. Edit the file and

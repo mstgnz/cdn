@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
@@ -94,11 +95,22 @@ var bucketTokens = map[string]bucketCredential{}
 // LoadBucketTokens reads bucket-scoped tokens from path and returns how many
 // were loaded.
 //
-// A missing file is not an error: it is the normal state of a deployment that
-// uses only the general TOKEN, and boot must succeed unchanged in that case. A
-// file that exists but cannot be parsed or fails validation IS an error, because
-// silently serving with zero bucket tokens after an operator wrote the file is
-// the worse failure: callers would fall back to "invalid token" with no clue why.
+// The line this draws is between "no scoped tokens" and "scoped tokens that
+// cannot be read", not between "no file" and "some file".
+//
+// Boot succeeds with zero bucket tokens when the file is missing, empty, or
+// holds no entries ({}, {"buckets":[]}, {"buckets":null}). All of those are an
+// operator saying there are none yet, which is the normal state of a deployment
+// running on the general TOKEN alone, and none of them can be hiding a
+// credential.
+//
+// Boot fails when the file has content that cannot be parsed, or entries that
+// fail validation. There the operator wrote definitions and believes they are
+// active; starting anyway would serve with fewer credentials than configured and
+// the callers using them would get "invalid token" with nothing to explain it.
+//
+// Neither outcome affects the general TOKEN, which is validated separately and
+// is accepted on every route regardless of what this file contains.
 func LoadBucketTokens(path string) (int, error) {
 	bucketTokens = map[string]bucketCredential{}
 
@@ -108,6 +120,15 @@ func LoadBucketTokens(path string) (int, error) {
 			return 0, nil
 		}
 		return 0, fmt.Errorf("read bucket token file %q: %w", path, err)
+	}
+
+	// An empty file is zero definitions, not a broken one. `touch
+	// config/tokens.json`, or a file emptied while rotating credentials, says
+	// there are no scoped tokens yet; there is nothing else it could mean. It is
+	// only once the file has content that failing to read it becomes dangerous,
+	// because then definitions may exist that the operator believes are active.
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return 0, nil
 	}
 
 	var cfg TokenConfig
