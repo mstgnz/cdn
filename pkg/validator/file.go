@@ -140,13 +140,26 @@ func ValidateFile(file *multipart.FileHeader) error {
 		}
 	}
 
-	// MIME type check
-	if !AllowedMimeTypes[file.Header.Get("Content-Type")] {
-		return &FileValidationError{
-			Code:    "INVALID_MIME_TYPE",
-			Message: fmt.Sprintf("Invalid MIME type. Allowed types: %v", getAllowedMimeTypes()),
-		}
-	}
+	// No MIME type check. The Content-Type of a multipart part is whatever the
+	// client chose to write, so as a gate it stopped nothing an attacker could
+	// not walk around, while rejecting real uploads that no attacker was making.
+	//
+	// It never had teeth. `application/octet-stream` has to be on any such list
+	// because mobile clients send it for everything, and that single entry is a
+	// documented bypass: a payload announced as octet-stream sailed through. What
+	// actually rejects a webshell is the extension allowlist above and the
+	// content signature in ValidateFileContent, neither of which the client
+	// controls.
+	//
+	// What it did do was refuse a valid PNG whose part carried no Content-Type
+	// header at all, and a valid PDF announced as `application/x-pdf`. Callers
+	// that pass a browser-supplied type straight through hit this routinely, and
+	// the only workaround available to an operator was VALIDATE_FILE=false, which
+	// turns off the two checks that were doing the work. A gate whose failure
+	// mode is "disable all validation" is worse than no gate.
+	//
+	// AllowedMimeTypes is kept as documentation of what callers typically send;
+	// nothing reads it.
 
 	return nil
 }
@@ -242,15 +255,6 @@ func getAllowedFormats() string {
 		formats = append(formats, format)
 	}
 	return strings.Join(formats, ", ")
-}
-
-// getAllowedMimeTypes returns allowed MIME types as a string
-func getAllowedMimeTypes() string {
-	mimeTypes := make([]string, 0, len(AllowedMimeTypes))
-	for mimeType := range AllowedMimeTypes {
-		mimeTypes = append(mimeTypes, mimeType)
-	}
-	return strings.Join(mimeTypes, ", ")
 }
 
 // isValidUTF8Text checks if the content is valid UTF-8 text
