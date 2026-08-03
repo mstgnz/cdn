@@ -1,7 +1,14 @@
 .DS_Store
-.env
 .idea
 tmp
+
+# Real configuration and every backup of it. The pattern matters as much as the
+# plain name: a .env.back or .env.2026-08-03 left behind while reorganising is
+# still a file full of credentials, and only .env itself was covered before.
+# .env.example is the tracked template and is re-included below.
+.env
+.env.*
+!.env.example
 
 # Bucket-scoped token file. Only config/tokens.template.json is tracked.
 config/tokens.json
