@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-08-04
+
 ### Fixed
 
 - **A slow Redis start left replicas permanently without a cache.** Redis replays

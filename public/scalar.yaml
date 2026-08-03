@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: CDN API Documentation
-  version: 1.11.0
+  version: 1.11.1
   description: |
     CDN Service is a high-performance, cloud-native content delivery solution built with Go. This service combines modern architectural patterns with enterprise-grade features to offer:
 
