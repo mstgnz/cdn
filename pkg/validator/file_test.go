@@ -7,10 +7,14 @@ import (
 	"testing"
 )
 
-// Uploads pass three independent gates: the extension allowlist, the MIME type
-// the client claims, and the bytes themselves. The third is the only one an
-// attacker does not control, so it is the one worth testing hardest: an
-// extension check alone would let anything through under a permitted name.
+// Uploads pass two gates: the extension allowlist and the bytes themselves.
+// Neither is client-controlled. The MIME type the client claims was a third
+// until 1.10.0, when it was dropped for being a string the caller writes.
+//
+// The byte check is the one worth testing hardest, from both directions: an
+// extension check alone would let anything through under a permitted name, and
+// a byte check that is too strict rejects real files under a permitted name,
+// which is the failure operators "fix" by turning validation off entirely.
 
 // header builds the multipart header ValidateFile inspects.
 func header(filename, contentType string, size int64) *multipart.FileHeader {
@@ -32,6 +36,15 @@ var (
 	pngSig  = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}
 	riffSig = []byte{0x52, 0x49, 0x46, 0x46}
 )
+
+// isoBMFF builds an ISO base media header: a 4-byte big-endian box length, the
+// literal "ftyp", then the brand. boxLen is what varies between real encoders
+// and what a signature must therefore ignore.
+func isoBMFF(boxLen int, brand string) []byte {
+	out := []byte{byte(boxLen >> 24), byte(boxLen >> 16), byte(boxLen >> 8), byte(boxLen)}
+	out = append(out, 'f', 't', 'y', 'p')
+	return append(out, []byte(brand)...)
+}
 
 func pad(sig []byte, n int) []byte {
 	out := append([]byte{}, sig...)
@@ -62,6 +75,23 @@ func TestValidateFileContentAcceptsSupportedFormats(t *testing.T) {
 		{"csv", []byte("id,name,total\n1,\"Ünal, Ayşe\",12.50\n2,Bob,3\n")},
 		{"csv with only a header", []byte("a,b,c\n")},
 		{"sql", []byte("-- dump\nINSERT INTO t VALUES ('ğüş');\n")},
+
+		// ISO base media, one case per box length seen in the wild. The length
+		// precedes "ftyp" and is not part of any signature; pinning it here is
+		// what previously made real heic/mp4/mov uploads fail with
+		// INVALID_FILE_CONTENT while their extension was allowlisted.
+		{"heic (ImageMagick, 0x1C)", pad(isoBMFF(0x1C, "heix"), 64)},
+		{"heic (0x18)", pad(isoBMFF(0x18, "heic"), 64)},
+		{"heif", pad(isoBMFF(0x20, "mif1"), 64)},
+		{"avif", pad(isoBMFF(0x1C, "avif"), 64)},
+		{"mp4 (ffmpeg, 0x20)", pad(isoBMFF(0x20, "isom"), 64)},
+		{"mov (QuickTime, 0x14)", pad(isoBMFF(0x14, "qt  "), 64)},
+		{"3gp", pad(isoBMFF(0x14, "3gp4"), 64)},
+
+		// TIFF in both byte orders. It had no entry at all, so the extension was
+		// accepted and the bytes were then always refused.
+		{"tiff little-endian", pad([]byte{0x49, 0x49, 0x2A, 0x00}, 64)},
+		{"tiff big-endian", pad([]byte{0x4D, 0x4D, 0x00, 0x2A}, 64)},
 	}
 
 	for _, tc := range cases {

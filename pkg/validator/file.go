@@ -198,6 +198,21 @@ func isValidFileContent(content []byte) bool {
 		return isValidUTF8Text(content)
 	}
 
+	// mp4, mov, 3gp, heic, heif and avif are all ISO base media files, and none of
+	// them has a fixed signature at offset 0. What identifies them is the literal
+	// "ftyp" at offset 4; the four bytes before it are that box's *length*, which
+	// varies per file and per encoder.
+	//
+	// Treating those length bytes as part of the signature is why this used to
+	// reject real files. Entries here once hardcoded 0x18 for heic/mp4 and 0x14
+	// for 3gp, so a file passed only when its ftyp box happened to be exactly 24
+	// or 20 bytes long. ImageMagick writes 0x1C for heic, ffmpeg writes 0x20 for
+	// mp4 and 0x14 for mov, and iPhone HEIC photos vary: all rejected as
+	// INVALID_FILE_CONTENT despite being on the extension allowlist.
+	if isISOBaseMedia(content) {
+		return true
+	}
+
 	// Magic number checks
 	magicNumbers := map[string][]byte{
 		"jpeg": {0xFF, 0xD8, 0xFF},
@@ -205,10 +220,10 @@ func isValidFileContent(content []byte) bool {
 		"gif":  {0x47, 0x49, 0x46, 0x38},
 		"webp": {0x52, 0x49, 0x46, 0x46},
 		"bmp":  {0x42, 0x4D},
-		// HEIC/HEIF files (check for 'ftyp' at offset 4)
-		"heic": {0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70}, // ftyp header
-		// AVIF files
-		"avif": {0x00, 0x00, 0x00, 0x1C, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66}, // ftypavif
+		// TIFF, both byte orders. Missing entirely before, which made .tiff an
+		// extension the allowlist accepted and the content check always refused.
+		"tiff_le": {0x49, 0x49, 0x2A, 0x00}, // "II*\0" little-endian
+		"tiff_be": {0x4D, 0x4D, 0x00, 0x2A}, // "MM\0*" big-endian
 		// Office documents (ZIP-based)
 		"office": {0x50, 0x4B, 0x03, 0x04}, // ZIP signature for modern Office files
 		// Legacy Office files
@@ -218,9 +233,7 @@ func isValidFileContent(content []byte) bool {
 		"mp3":     {0xFF, 0xFB},             // MP3 frame header (most common)
 		"mp3_id3": {0x49, 0x44, 0x33},       // ID3v2 header
 		// Video files
-		"mp4": {0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70},                   // ftyp (same as HEIC but different content)
-		"3gp": {0x00, 0x00, 0x00, 0x14, 0x66, 0x74, 0x79, 0x70, 0x33, 0x67, 0x70}, // ftyp3gp
-		"avi": {0x52, 0x49, 0x46, 0x46},                                           // RIFF header for AVI
+		"avi": {0x52, 0x49, 0x46, 0x46}, // RIFF header for AVI
 		// PDF files
 		"pdf": {0x25, 0x50, 0x44, 0x46}, // %PDF
 	}
@@ -233,6 +246,25 @@ func isValidFileContent(content []byte) bool {
 
 	// If no magic number matches, check if it's valid UTF-8 text (for SQL files)
 	return isValidUTF8Text(content)
+}
+
+// isISOBaseMedia reports whether content is an ISO base media file (ISO/IEC
+// 14496-12): mp4, mov, 3gp, m4a and the HEIF family, which includes heic and
+// avif.
+//
+// The format opens with a box: a 4-byte big-endian length, then a 4-byte type.
+// For these files the first box is "ftyp", so the type is what identifies them
+// and the length is file-specific. Only the type is checked here.
+//
+// This is deliberately a container check, not a codec check. It says the bytes
+// are a media container rather than, say, a script; which container brand it
+// carries is not something this layer can usefully police, and the extension
+// allowlist is what keeps executable types out in the first place.
+func isISOBaseMedia(content []byte) bool {
+	if len(content) < 12 {
+		return false
+	}
+	return compareBytes(content[4:8], []byte{'f', 't', 'y', 'p'})
 }
 
 // compareBytes compares byte arrays

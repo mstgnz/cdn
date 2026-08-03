@@ -336,8 +336,9 @@ Response:
 
 ### Accepted File Types
 
-Uploads pass three independent gates. The first two describe the request, the
-third describes the bytes, which is the only one a caller does not control.
+Uploads pass two gates, and a caller controls neither of them. The multipart
+part's `Content-Type` is not one: it is a string the client writes, so it was
+removed as a gate in 1.10.0. See [migration.md](migration.md).
 
 1. **Extension allowlist.** Anything a browser could execute or interpret is
    absent by design: `.html`, `.js`, `.php`, `.sh`, `.exe`, `.svg` excepted (it
@@ -345,18 +346,17 @@ third describes the bytes, which is the only one a caller does not control.
 
    | Group | Extensions |
    |---|---|
-   | Images | `jpg` `jpeg` `png` `gif` `webp` `bmp` `tiff` `tif` `svg` `ico` `heic` `heif` `avif` `raw` |
+   | Images | `jpg` `jpeg` `png` `gif` `webp` `bmp` `tiff` `svg` `heic` `heif` `avif` |
    | Documents | `pdf` `doc` `docx` `xls` `xlsx` `ppt` `pptx` |
    | Text / data | `csv` `sql` |
    | Archives | `zip` |
    | Audio | `mp3` `wav` |
    | Video | `mp4` `mov` `3gp` `avi` |
 
-2. **MIME type**, from the multipart part's `Content-Type`. Note that
-   `application/octet-stream` is accepted, since several mobile clients send it
-   for everything, so this gate is weaker than it looks.
+   `tif`, `ico` and `raw` are **not** uploadable, though `IsImageFile` treats
+   them as images when deciding whether a stored object can be resized.
 
-3. **Content signature.** The bytes must match a known format, or be valid UTF-8
+2. **Content signature.** The bytes must match a known format, or be valid UTF-8
    text with no NUL bytes (which is what lets `csv` and `sql` through). A file
    whose content matches nothing is rejected however it is named.
 
