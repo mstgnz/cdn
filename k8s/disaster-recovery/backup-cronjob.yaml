@@ -13,7 +13,7 @@ spec:
         spec:
           containers:
             - name: backup
-              image: minio/mc
+              image: quay.io/minio/mc
               command:
                 - /bin/sh
                 - -c

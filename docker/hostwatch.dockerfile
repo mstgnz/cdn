@@ -1,6 +1,7 @@
 # hostwatch is pure Go with no cgo, so it needs none of the ImageMagick build in
-# the main dockerfile. The Go version matches the toolchain line in go.mod.
-FROM golang:1.23.4-alpine AS build
+# the main dockerfile. Same Go minor as the main dockerfile and the toolchain
+# line in go.mod.
+FROM golang:1.27-alpine AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./

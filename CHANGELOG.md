@@ -4,6 +4,54 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-09-24
+
+### Fixed
+
+- **The API image could no longer be built.** Debian withdrew the bullseye
+  security archive in September 2026: its index is still published but the
+  packages it lists answer 404 on every mirror, so any build without a cached
+  `apt` layer failed in the first `RUN`. CI broke on the 1.12.0 commit for this
+  reason, not because of anything in it. Both stages now use bookworm
+  (`golang:1.27-bookworm` and `debian:bookworm-slim`), and the runtime library
+  list was regenerated with `ldd` and `dpkg -S` rather than renamed by hand:
+  `libicu72`, `libimath-3-1-29`, `libopenexr-3-1-30`, `libpcre2-8-0`,
+  `libtiff6` and `libwebp7` replace their bullseye versions, `liblerc4` is new
+  as a dependency of `libtiff6`, and `libuuid1` is no longer linked. ImageMagick
+  itself is still built from the same pinned source release.
+
+### Security
+
+- **Built with Go 1.27.** The toolchain was Go 1.23, which stopped receiving
+  security fixes when Go 1.25 was released. `toolchain` in `go.mod` is now
+  `go1.27.1` and both dockerfiles use Go 1.27. The `go 1.22.0` directive is left
+  as it was on purpose: it decides which GODEBUG defaults apply, so the standard
+  library keeps its current TLS, HTTP and x509 behaviour while receiving the
+  fixes. Raising it is a separate change.
+
+- **Fiber 2.52.12 and golang.org/x/net 0.38.0.** Fiber 2.52.5 carried a denial
+  of service reachable from any request through route parameter overflow
+  (GO-2026-4543) and a crash in `BodyParser` on a crafted slice index
+  (GO-2025-3845); x/net carried GO-2025-3595. `govulncheck` against the Go 1.23
+  build reported 34 standard library vulnerabilities in code this service
+  calls, all fixed by the Go 1.27 toolchain above. The x/net upgrade forced the
+  `go` line to 1.23, so `go.mod` now also carries `godebug default=go1.22`: the
+  built binaries embed exactly the same `DefaultGODEBUG` as before. Still open
+  and left for a separate change: the AWS SDK eventstream decoder
+  (GO-2026-5764, only reachable with an archive configured) and two
+  opentelemetry SDK issues that need control of the host's `PATH`.
+
+### Changed
+
+- **MinIO images come from quay.io.** MinIO removed its images from Docker Hub,
+  so `minio/minio` and `minio/mc` no longer resolve and a host without them
+  cached could not recreate the MinIO container. `docker-compose.yml`, the
+  makefile and the k8s backup job now use `quay.io/minio/minio` and
+  `quay.io/minio/mc`. The pinned `MINIO_VERSION` release is available there
+  under the same tag. Changing the image name makes compose recreate the MinIO
+  container on the next `up`, so on an existing deployment verify the digest
+  first and schedule that restart deliberately.
+
 ## [1.12.0] - 2026-09-24
 
 ### Added

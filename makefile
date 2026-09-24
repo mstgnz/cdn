@@ -42,7 +42,7 @@ run_minio: create_network
 		--volume=minio:/var/lib/minio \
 		-e MINIO_ROOT_USER='$(MINIO_ROOT_USER)' \
 		-e MINIO_ROOT_PASSWORD='$(MINIO_ROOT_PASSWORD)' \
-		minio/minio server --console-address ":9001" /var/lib/minio
+		quay.io/minio/minio server --console-address ":9001" /var/lib/minio
 
 create_network:
 	@if ! docker network inspect $(APP_NAME) >/dev/null 2>&1; then \

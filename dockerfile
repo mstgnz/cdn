@@ -3,7 +3,7 @@
 # The Go binding is cgo, so this stage needs a full toolchain: compilers, the -dev
 # headers and the ImageMagick source tree. None of that belongs in the image that
 # runs in production, which is what the second stage is for.
-FROM golang:1.22-bullseye AS build
+FROM golang:1.27-bookworm AS build
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -86,10 +86,11 @@ RUN CGO_ENABLED=1 GOOS=linux go build -o restore ./cmd/restore
 
 # Stage 2: the image that ships.
 #
-# bullseye-slim and not a newer Debian on purpose: the binary and the ImageMagick
-# libraries are linked against bullseye's glibc and codec libraries, so the
-# runtime has to be the same release.
-FROM debian:bullseye-slim
+# Same Debian release as the build stage on purpose: the binary and the
+# ImageMagick libraries are linked against its glibc and codec libraries. Move
+# both stages together; bullseye was left when its security archive was
+# withdrawn in September 2026 and every fresh build began failing with 404s.
+FROM debian:bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -114,22 +115,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgcc-s1 \
     libglib2.0-0 \
     libgomp1 \
-    libicu67 \
-    libilmbase25 \
+    libicu72 \
+    libimath-3-1-29 \
     libjbig0 \
     libjpeg62-turbo \
     liblcms2-2 \
+    liblerc4 \
     liblqr-1-0 \
     liblzma5 \
     libmd0 \
-    libopenexr25 \
+    libopenexr-3-1-30 \
     libopenjp2-7 \
-    libpcre3 \
+    libpcre2-8-0 \
     libpng16-16 \
     libstdc++6 \
-    libtiff5 \
-    libuuid1 \
-    libwebp6 \
+    libtiff6 \
+    libwebp7 \
     libwebpdemux2 \
     libwebpmux3 \
     libx11-6 \
