@@ -20,6 +20,13 @@ All notable changes to this project will be documented in this file.
   catches hostwatch itself going quiet. See `docs/deployment.md`, "Host
   monitoring".
 
+### Fixed
+
+- **Redis did not come back after a host reboot.** It was the only service in
+  `docker-compose.yml` without a restart policy, so on 2026-09-24 the API, nginx
+  and MinIO restarted with the host while Redis stayed exited, and `/health`
+  answered 500 until it was started by hand. It now has `restart: always`.
+
 ### Security
 
 - **The API replicas no longer mount the repository.** `docker-compose.yml`

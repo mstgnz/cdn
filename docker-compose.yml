@@ -124,6 +124,9 @@ services:
   redis:
     image: redis:7.2-alpine
     container_name: cdn-redis
+    # Without it Redis stays down after a host reboot while everything else comes
+    # back, and /health answers 500 until someone starts it by hand.
+    restart: always
     # Loopback for the same reason as MinIO, and more urgently: this Redis has no
     # password, so anyone who can reach the port can read the rate-limit state and
     # the cache, and write to both.
