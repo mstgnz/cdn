@@ -4,11 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-09-24
+
 ### Added
 
 - **`hostwatch`, an opt-in container that mails when the host runs out of room.**
-  In September 2026 the production disk filled up and the VM stopped accepting
-  SSH logins, with nothing having warned beforehand. `hostwatch` measures disk,
+  When a production host went down in September 2026, its disk turned out to have
+  been above 90% for weeks without anyone knowing, because nothing was watching
+  it. `hostwatch` measures disk,
   inode and memory usage on the host every minute and mails at 80% and 90%, with
   reminders while a level holds and a notice when it clears. It runs as its own
   small image (`docker/hostwatch.dockerfile`, no ImageMagick) and container, so
