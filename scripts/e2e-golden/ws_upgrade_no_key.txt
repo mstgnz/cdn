@@ -1,0 +1,12 @@
+> GET /ws?token=<token>
+> Connection: Upgrade
+> Upgrade: websocket
+> Sec-WebSocket-Version: 13
+< HTTP/1.1 426 Upgrade Required
+< Content-Length: 16
+< Content-Type: text/plain; charset=utf-8
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+Upgrade Required

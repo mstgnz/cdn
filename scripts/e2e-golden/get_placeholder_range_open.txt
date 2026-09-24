@@ -1,0 +1,14 @@
+> GET /golden/does/not/exist.png
+> Range: bytes=3900-
+< HTTP/1.1 206 Partial Content
+< Accept-Ranges: bytes
+< Content-Length: 16
+< Content-Range: bytes 3900-3915/3916
+< Content-Type: image/png
+< Last-Modified: <http-date>
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+binary unknown sha256=5b30e1639594555d64862a3d768f651706964a8c6c5cfb38bb9739bbf0add849 len=16

@@ -1,0 +1,14 @@
+> GET /
+> Range: bytes=0-4
+< HTTP/1.1 206 Partial Content
+< Accept-Ranges: bytes
+< Content-Length: 5
+< Content-Range: bytes 0-4/348
+< Content-Type: text/html; charset=utf-8
+< Last-Modified: <http-date>
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+<!doc

@@ -1,10 +1,10 @@
-> HEAD /health
+> GET /golden/p/<uuid>.png?width=abc
 < HTTP/1.1 200 OK
-< Content-Length: <n>
-< Content-Type: application/json
+< Content-Length: 396
+< Content-Type: image/png
 < X-Content-Type-Options: nosniff
 < X-Ratelimit-Limit: 1000
 < X-Ratelimit-Remaining: <n>
 < X-Ratelimit-Reset: <n>
 <
-(empty)
+fixture photo.png (396 bytes)

@@ -1,0 +1,10 @@
+> GET /golden/does/not/exist.png
+> Range: bytes=99999-
+< HTTP/1.1 416 Requested Range Not Satisfiable
+< Content-Length: 21
+< Content-Type: text/plain; charset=utf-8
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+Range Not Satisfiable

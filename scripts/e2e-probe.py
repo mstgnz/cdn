@@ -327,7 +327,8 @@ def obj(key, prefix="/" + BUCKET + "/", suffix=""):
 def build():
     # service and meta routes
     probe("health_get", "GET", "/health")
-    probe("health_head", "HEAD", "/health")
+    # No body to spot the timestamp in, yet its length still moves Content-Length.
+    probe("health_head", "HEAD", "/health", volatile_body=True)
     probe("health_upper", "GET", "/HEALTH")
     probe("health_trailing_slash", "GET", "/health/")
     probe("health_origin", "GET", "/health", [ORIGIN])
@@ -370,6 +371,10 @@ def build():
     probe("ws_upgrade_no_token", "GET", "/ws", ws_up)
     probe("ws_upgrade_bad_token", "GET", "/ws?token=wrong", ws_up)
     probe("ws_upgrade_ok", "GET", "/ws?token=" + TOKEN, ws_up, websocket=True)
+    probe("ws_upgrade_no_key", "GET", "/ws?token=" + TOKEN, ws_up[:3])
+    probe("ws_upgrade_bad_version", "GET", "/ws?token=" + TOKEN, [ws_up[0], ws_up[1], ("Sec-WebSocket-Version", "8"), ws_up[3]])
+    probe("ws_upgrade_post", "POST", "/ws?token=" + TOKEN, ws_up)
+    probe("ws_upgrade_subpath", "GET", "/wsextra/x.png?token=" + TOKEN, ws_up)
 
     # uploads
     up("upload_png", "photo.png", PNG, "image/png", capture=cap_object("png"))
@@ -427,6 +432,17 @@ def build():
     probe("get_missing_object_head", "HEAD", "/golden/does/not/exist.png")
     probe("get_placeholder_if_modified", "GET", "/golden/does/not/exist.png", [("If-Modified-Since", "Tue, 01 Jan 2030 00:00:00 GMT")])
     probe("get_placeholder_range", "GET", "/golden/does/not/exist.png", [("Range", "bytes=0-9")])
+    probe("get_placeholder_range_suffix", "GET", "/golden/does/not/exist.png", [("Range", "bytes=-10")])
+    probe("get_placeholder_range_open", "GET", "/golden/does/not/exist.png", [("Range", "bytes=3900-")])
+    probe("get_placeholder_range_invalid", "GET", "/golden/does/not/exist.png", [("Range", "bytes=99999-")])
+    probe("get_placeholder_range_head", "HEAD", "/golden/does/not/exist.png", [("Range", "bytes=0-9")])
+    probe("get_placeholder_if_modified_old", "GET", "/golden/does/not/exist.png", [("If-Modified-Since", "Sat, 01 Jan 2000 00:00:00 GMT")])
+    probe("get_placeholder_if_modified_garbage", "GET", "/golden/does/not/exist.png", [("If-Modified-Since", "yesterday")])
+    probe("index_range", "GET", "/", [("Range", "bytes=0-4")])
+    probe("favicon_upper", "GET", "/FAVICON.ICO")
+    probe("health_post", "POST", "/health")
+    probe("get_query_not_a_number", "GET", obj("png", suffix="?width=abc"))
+    probe("get_query_bad_escape", "GET", obj("png", suffix="?width=%zz&height=20"))
     probe("get_missing_bucket", "GET", "/nobucket/x.png")
     probe("get_traversal", "GET", "/golden/a/../x.png")
     probe("get_bucket_only", "GET", "/golden")
