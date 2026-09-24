@@ -1,8 +1,11 @@
 package observability
 
 import (
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/adaptor"
+	"bytes"
+	"maps"
+	"net/http"
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -210,9 +213,29 @@ var (
 // format. It delegates to promhttp with ContinueOnError so that a single
 // inconsistent metric family does not turn the whole endpoint into a 500
 // (the previous behaviour); valid metrics are still served.
-func MetricsHandler(c *fiber.Ctx) error {
+//
+// The exposition is buffered and sent with a Content-Length, as fiber's adaptor
+// did; written straight through it would go out chunked.
+func MetricsHandler() http.Handler {
 	h := promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{
 		ErrorHandling: promhttp.ContinueOnError,
 	})
-	return adaptor.HTTPHandler(h)(c)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &bufferedResponse{header: http.Header{}, status: http.StatusOK}
+		h.ServeHTTP(rec, r)
+		maps.Copy(w.Header(), rec.header)
+		w.Header().Set("Content-Length", strconv.Itoa(rec.body.Len()))
+		w.WriteHeader(rec.status)
+		_, _ = w.Write(rec.body.Bytes())
+	})
 }
+
+type bufferedResponse struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (b *bufferedResponse) Header() http.Header         { return b.header }
+func (b *bufferedResponse) WriteHeader(status int)      { b.status = status }
+func (b *bufferedResponse) Write(p []byte) (int, error) { return b.body.Write(p) }

@@ -17,7 +17,9 @@
 package audit
 
 import (
-	"github.com/gofiber/fiber/v2"
+	"net/http"
+
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/pkg/middleware"
 	"github.com/mstgnz/cdn/pkg/observability"
 )
@@ -33,14 +35,14 @@ const (
 // AuthFailure records a credential that was rejected on an authenticated route.
 // reason comes from the auth sentinels (no token, malformed header, invalid
 // token), which describe the failure without echoing what was sent.
-func AuthFailure(c *fiber.Ctx, reason string) {
+func AuthFailure(r *http.Request, reason string) {
 	logger := observability.Logger()
 	logger.Warn().
 		Str("event", EventAuthFailure).
 		Str("reason", reason).
-		Str("method", c.Method()).
-		Str("path", c.Path()).
-		Str("ip", middleware.ClientIP(c)).
+		Str("method", r.Method).
+		Str("path", httpx.RawPath(r)).
+		Str("ip", middleware.ClientIP(r)).
 		Msg("authentication failed")
 }
 
@@ -48,14 +50,14 @@ func AuthFailure(c *fiber.Ctx, reason string) {
 // route that only accepts the general token. This is logged apart from a plain
 // failure because it is almost always a misconfigured client rather than an
 // attack, and the two need different responses from an operator.
-func ScopedTokenOnOperatorRoute(c *fiber.Ctx, tokenBucket string) {
+func ScopedTokenOnOperatorRoute(r *http.Request, tokenBucket string) {
 	logger := observability.Logger()
 	logger.Warn().
 		Str("event", EventScopedTokenOnAdmin).
 		Str("token_bucket", tokenBucket).
-		Str("method", c.Method()).
-		Str("path", c.Path()).
-		Str("ip", middleware.ClientIP(c)).
+		Str("method", r.Method).
+		Str("path", httpx.RawPath(r)).
+		Str("ip", middleware.ClientIP(r)).
 		Msg("bucket-scoped token rejected on an operator route")
 }
 
@@ -63,14 +65,14 @@ func ScopedTokenOnOperatorRoute(c *fiber.Ctx, tokenBucket string) {
 // not own. Both bucket names are logged: the pair is what makes the event
 // actionable, since it separates a client pointed at the wrong bucket from
 // someone probing for other tenants.
-func BucketAccessDenied(c *fiber.Ctx, tokenBucket, requestedBucket string) {
+func BucketAccessDenied(r *http.Request, tokenBucket, requestedBucket string) {
 	logger := observability.Logger()
 	logger.Warn().
 		Str("event", EventBucketAccessDenied).
 		Str("token_bucket", tokenBucket).
 		Str("requested_bucket", requestedBucket).
-		Str("method", c.Method()).
-		Str("path", c.Path()).
-		Str("ip", middleware.ClientIP(c)).
+		Str("method", r.Method).
+		Str("path", httpx.RawPath(r)).
+		Str("ip", middleware.ClientIP(r)).
 		Msg("bucket-scoped token denied access to another bucket")
 }

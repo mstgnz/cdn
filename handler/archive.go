@@ -3,13 +3,13 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 
-	"github.com/gofiber/fiber/v2"
-
 	"github.com/mstgnz/cdn/pkg/config"
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/pkg/validator"
 	"github.com/mstgnz/cdn/service"
 )
@@ -40,7 +40,7 @@ type ArchiveRequest struct {
 
 // ArchiveHandler serves the on-demand tiering endpoint.
 type ArchiveHandler interface {
-	ArchiveObjects(c *fiber.Ctx) error
+	ArchiveObjects(w http.ResponseWriter, r *http.Request) error
 }
 
 type archiveHandler struct {
@@ -58,36 +58,36 @@ func NewArchiveHandler(tiering *service.Tiering) ArchiveHandler {
 // Nothing here decides on its own that an object is safe to delete. Every file
 // goes through the same verification the scheduled sweep uses, so an object the
 // archive cannot confirm keeps its local copy and says why.
-func (h *archiveHandler) ArchiveObjects(c *fiber.Ctx) error {
+func (h *archiveHandler) ArchiveObjects(w http.ResponseWriter, r *http.Request) error {
 	var req ArchiveRequest
-	if err := c.BodyParser(&req); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid request body", nil)
+	if err := httpx.BindBody(r, &req); err != nil {
+		return service.Response(w, http.StatusBadRequest, false, "Invalid request body", nil)
 	}
 
 	if err := validator.ValidateStruct(req); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	// Reconcile the body with the token before anything acts on the bucket: a
 	// scoped token archives inside its own bucket and nowhere else.
-	bucket, err := resolveBucket(c, req.Bucket)
+	bucket, err := resolveBucket(r, req.Bucket)
 	if err != nil {
-		return bucketForbidden(c)
+		return bucketForbidden(w)
 	}
 	if bucket == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Bucket is required", nil)
 	}
 
 	maxBatch := config.GetEnvAsIntOrDefault("MAX_BATCH_FILES", 100)
 	if maxBatch > 0 && len(req.Files) > maxBatch {
-		return service.Response(c, fiber.StatusBadRequest, false,
+		return service.Response(w, http.StatusBadRequest, false,
 			fmt.Sprintf("Too many files in one batch (max %d)", maxBatch), nil)
 	}
 
 	if !h.tiering.Enabled() {
 		// A deployment with no archive cannot honour this request, and pretending
 		// otherwise would tell the caller its files are safely stored elsewhere.
-		return service.Response(c, fiber.StatusServiceUnavailable, false,
+		return service.Response(w, http.StatusServiceUnavailable, false,
 			"Archive is not configured on this deployment", nil)
 	}
 
@@ -95,7 +95,7 @@ func (h *archiveHandler) ArchiveObjects(c *fiber.Ctx) error {
 	// of ARCHIVE_ONLY_BUCKETS has nowhere for any of its objects to go, so a
 	// per-file rejection would just repeat one configuration fact N times.
 	if !h.tiering.InScope(bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false,
+		return service.Response(w, http.StatusBadRequest, false,
 			fmt.Sprintf("Bucket %q is not in the archive scope on this deployment", bucket), nil)
 	}
 
@@ -124,7 +124,7 @@ func (h *archiveHandler) ArchiveObjects(c *fiber.Ctx) error {
 		}
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "success", map[string]any{
+	return service.Response(w, http.StatusOK, true, "success", map[string]any{
 		"results": results,
 		"summary": summary,
 	})

@@ -12,7 +12,7 @@
 2. **File Upload Issues**
    - Error: "File size exceeds limit"
    - Solution:
-     - The Fiber `BodyLimit` is 100MB (matches nginx `client_max_body_size 100M`)
+     - The server's request body limit is 100MB (matches nginx `client_max_body_size 100M`); a larger declared body gets 413
      - Per-file validation cap is `MAX_FILE_SIZE` (default 100MB)
      - If using Nginx, verify `client_max_body_size` matches
 

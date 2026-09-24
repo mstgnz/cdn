@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/gofiber/fiber/v2"
 )
 
 func TestIsInt(t *testing.T) {
@@ -129,24 +127,13 @@ func TestRatioWidthHeight(t *testing.T) {
 }
 
 func TestGetWidthAndHeight_Query(t *testing.T) {
-	app := fiber.New()
-	app.Get("/", func(c *fiber.Ctx) error {
-		resize, w, h := GetWidthAndHeight(c, QueryType)
-		return c.JSON(fiber.Map{"resize": resize, "w": w, "h": h})
-	})
-
 	// With a width param -> resize true.
-	resp, err := app.Test(httptest.NewRequest("GET", "/?width=100", nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusOK {
-		t.Fatalf("status = %d", resp.StatusCode)
+	if resize, w, _ := GetWidthAndHeight(httptest.NewRequest("GET", "/?width=100", nil), QueryType); !resize || w != 100 {
+		t.Fatalf("?width=100: resize=%v w=%d, want true 100", resize, w)
 	}
 	// Without params -> resize false.
-	resp2, _ := app.Test(httptest.NewRequest("GET", "/", nil))
-	if resp2.StatusCode != fiber.StatusOK {
-		t.Fatalf("status = %d", resp2.StatusCode)
+	if resize, _, _ := GetWidthAndHeight(httptest.NewRequest("GET", "/", nil), QueryType); resize {
+		t.Fatal("no params: resize = true, want false")
 	}
 }
 
@@ -157,20 +144,11 @@ func TestCheckToken(t *testing.T) {
 	t.Setenv("TOKEN", serverToken)
 
 	run := func(authHeader string) error {
-		app := fiber.New()
-		var captured error
-		app.Get("/", func(c *fiber.Ctx) error {
-			captured = CheckToken(c)
-			return c.SendString("done")
-		})
 		req := httptest.NewRequest("GET", "/", nil)
 		if authHeader != "" {
 			req.Header.Set("Authorization", authHeader)
 		}
-		if _, err := app.Test(req); err != nil {
-			t.Fatalf("request failed: %v", err)
-		}
-		return captured
+		return CheckToken(req)
 	}
 
 	if err := run("Bearer " + serverToken); err != nil {
@@ -239,20 +217,11 @@ func TestHasUnsafeObjectKey(t *testing.T) {
 func TestCheckToken_EmptyTokensRejected(t *testing.T) {
 	run := func(serverToken, authHeader string) error {
 		t.Setenv("TOKEN", serverToken)
-		app := fiber.New()
-		var captured error
-		app.Get("/", func(c *fiber.Ctx) error {
-			captured = CheckToken(c)
-			return c.SendString("done")
-		})
 		req := httptest.NewRequest("GET", "/", nil)
 		if authHeader != "" {
 			req.Header.Set("Authorization", authHeader)
 		}
-		if _, err := app.Test(req); err != nil {
-			t.Fatalf("request failed: %v", err)
-		}
-		return captured
+		return CheckToken(req)
 	}
 
 	if err := run("", "Bearer "); err == nil {
@@ -267,30 +236,20 @@ func TestCheckToken_EmptyTokensRejected(t *testing.T) {
 // value floor (a negative int cast to uint would otherwise wrap huge).
 func TestGetWidthAndHeight_Clamp(t *testing.T) {
 	t.Setenv("MAX_RESIZE_DIMENSION", "4096")
-	app := fiber.New()
-	app.Get("/", func(c *fiber.Ctx) error {
-		_, w, h := GetWidthAndHeight(c, QueryType)
-		c.Set("W", strconv.Itoa(int(w)))
-		c.Set("H", strconv.Itoa(int(h)))
-		return c.SendString("ok")
-	})
-
-	resp, err := app.Test(httptest.NewRequest("GET", "/?width=99999&height=88888", nil))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.Header.Get("W") != "4096" || resp.Header.Get("H") != "4096" {
-		t.Fatalf("expected clamp to 4096, got W=%s H=%s", resp.Header.Get("W"), resp.Header.Get("H"))
+	dims := func(target string) (string, string) {
+		_, w, h := GetWidthAndHeight(httptest.NewRequest("GET", target, nil), QueryType)
+		return strconv.Itoa(int(w)), strconv.Itoa(int(h))
 	}
 
-	resp2, err := app.Test(httptest.NewRequest("GET", "/?width=-5&height=100", nil))
-	if err != nil {
-		t.Fatal(err)
+	if w, h := dims("/?width=99999&height=88888"); w != "4096" || h != "4096" {
+		t.Fatalf("expected clamp to 4096, got W=%s H=%s", w, h)
 	}
-	if resp2.Header.Get("W") != "0" {
-		t.Fatalf("expected negative width floored to 0, got W=%s", resp2.Header.Get("W"))
+
+	w, h := dims("/?width=-5&height=100")
+	if w != "0" {
+		t.Fatalf("expected negative width floored to 0, got W=%s", w)
 	}
-	if resp2.Header.Get("H") != "100" {
-		t.Fatalf("expected height 100, got H=%s", resp2.Header.Get("H"))
+	if h != "100" {
+		t.Fatalf("expected height 100, got H=%s", h)
 	}
 }

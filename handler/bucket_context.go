@@ -2,9 +2,9 @@ package handler
 
 import (
 	"errors"
+	"net/http"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/mstgnz/cdn/pkg/audit"
 	"github.com/mstgnz/cdn/service"
 )
@@ -25,10 +25,10 @@ var errBucketForbidden = errors.New("token is not allowed to access this bucket"
 //
 // An empty result is only reachable with the general token and stays the
 // caller's problem to report, since each endpoint words that error differently.
-func resolveBucket(c *fiber.Ctx, requested string) (string, error) {
+func resolveBucket(r *http.Request, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)
 
-	p := service.PrincipalFrom(c)
+	p := service.PrincipalFrom(r)
 	if !p.Scoped {
 		return requested, nil
 	}
@@ -39,12 +39,12 @@ func resolveBucket(c *fiber.Ctx, requested string) (string, error) {
 	// Logged here rather than in bucketForbidden because this is the only place
 	// that knows both sides of the mismatch, and it covers every write handler
 	// at once.
-	audit.BucketAccessDenied(c, p.Bucket, requested)
+	audit.BucketAccessDenied(r, p.Bucket, requested)
 	return "", errBucketForbidden
 }
 
 // bucketForbidden writes the 403 for a bucket mismatch. The message names no
 // bucket, so a scoped token cannot be used to probe which buckets exist.
-func bucketForbidden(c *fiber.Ctx) error {
-	return service.Response(c, fiber.StatusForbidden, false, errBucketForbidden.Error(), nil)
+func bucketForbidden(w http.ResponseWriter) error {
+	return service.Response(w, http.StatusForbidden, false, errBucketForbidden.Error(), nil)
 }

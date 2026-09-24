@@ -1,45 +1,33 @@
 package middleware
 
 import (
-	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/mstgnz/cdn/pkg/config"
 )
 
-// callHandler runs fn inside a fiber request and returns its string body,
-// applying the given request headers.
-func callHandler(t *testing.T, fn fiber.Handler, headers map[string]string) string {
-	t.Helper()
-	app := fiber.New()
-	app.Get("/", fn)
+// requestWith builds a request carrying the given headers.
+func requestWith(headers map[string]string) *http.Request {
 	req := httptest.NewRequest("GET", "/", nil)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := app.Test(req)
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	return string(body)
+	return req
 }
 
 // TestClientIP_PrefersCloudflareHeader verifies the real client IP comes from
 // CF-Connecting-IP and that a spoofable X-Forwarded-For is ignored.
 func TestClientIP_PrefersCloudflareHeader(t *testing.T) {
-	got := callHandler(t, func(c *fiber.Ctx) error {
-		return c.SendString(ClientIP(c))
-	}, map[string]string{
+	got := ClientIP(requestWith(map[string]string{
 		"CF-Connecting-IP": "203.0.113.7",
 		"X-Forwarded-For":  "1.2.3.4", // attacker-supplied, must be ignored
 		"X-Real-IP":        "172.18.0.1",
-	})
+	}))
 	if got != "203.0.113.7" {
 		t.Fatalf("expected CF-Connecting-IP 203.0.113.7, got %q", got)
 	}
@@ -48,9 +36,7 @@ func TestClientIP_PrefersCloudflareHeader(t *testing.T) {
 // TestClientIP_FallsBackToPeer verifies that without the Cloudflare header we
 // fall back to the TCP peer rather than returning empty.
 func TestClientIP_FallsBackToPeer(t *testing.T) {
-	got := callHandler(t, func(c *fiber.Ctx) error {
-		return c.SendString(ClientIP(c))
-	}, nil)
+	got := ClientIP(requestWith(nil))
 	if got == "" {
 		t.Fatal("expected a fallback IP, got empty string")
 	}
@@ -64,9 +50,7 @@ func rateLimitKeyFor(t *testing.T, authHeader string) string {
 	if authHeader != "" {
 		headers["Authorization"] = authHeader
 	}
-	return callHandler(t, func(c *fiber.Ctx) error {
-		return c.SendString(RateLimitKey(c))
-	}, headers)
+	return RateLimitKey(requestWith(headers))
 }
 
 // installBucketToken loads a single bucket-scoped token for the test.

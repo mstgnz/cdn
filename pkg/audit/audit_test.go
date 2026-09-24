@@ -3,18 +3,18 @@ package audit
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 )
 
-// capture runs fn inside a fiber request with the global logger redirected to a
-// buffer, and returns the single decoded log entry it produced.
-func capture(t *testing.T, headers map[string]string, fn func(c *fiber.Ctx)) map[string]any {
+// capture runs fn on a request with the global logger redirected to a buffer,
+// and returns the single decoded log entry it produced.
+func capture(t *testing.T, headers map[string]string, fn func(r *http.Request)) map[string]any {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -22,19 +22,11 @@ func capture(t *testing.T, headers map[string]string, fn func(c *fiber.Ctx)) map
 	zlog.Logger = zerolog.New(&buf)
 	t.Cleanup(func() { zlog.Logger = previous })
 
-	app := fiber.New()
-	app.Post("/upload", func(c *fiber.Ctx) error {
-		fn(c)
-		return c.SendString("done")
-	})
-
 	req := httptest.NewRequest("POST", "/upload", nil)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	if _, err := app.Test(req); err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
+	fn(req)
 
 	line := strings.TrimSpace(buf.String())
 	if line == "" {
@@ -63,7 +55,7 @@ func assertField(t *testing.T, entry map[string]any, key, want string) {
 }
 
 func TestAuthFailure(t *testing.T) {
-	entry := capture(t, map[string]string{"CF-Connecting-IP": "203.0.113.7"}, func(c *fiber.Ctx) {
+	entry := capture(t, map[string]string{"CF-Connecting-IP": "203.0.113.7"}, func(c *http.Request) {
 		AuthFailure(c, "invalid token")
 	})
 
@@ -76,7 +68,7 @@ func TestAuthFailure(t *testing.T) {
 }
 
 func TestScopedTokenOnOperatorRoute(t *testing.T) {
-	entry := capture(t, map[string]string{"CF-Connecting-IP": "203.0.113.7"}, func(c *fiber.Ctx) {
+	entry := capture(t, map[string]string{"CF-Connecting-IP": "203.0.113.7"}, func(c *http.Request) {
 		ScopedTokenOnOperatorRoute(c, "tedarik")
 	})
 
@@ -86,7 +78,7 @@ func TestScopedTokenOnOperatorRoute(t *testing.T) {
 }
 
 func TestBucketAccessDenied(t *testing.T) {
-	entry := capture(t, map[string]string{"CF-Connecting-IP": "203.0.113.7"}, func(c *fiber.Ctx) {
+	entry := capture(t, map[string]string{"CF-Connecting-IP": "203.0.113.7"}, func(c *http.Request) {
 		BucketAccessDenied(c, "tedarik", "sovtajyeri")
 	})
 
@@ -102,7 +94,7 @@ func TestUsesTrustedClientIP(t *testing.T) {
 	entry := capture(t, map[string]string{
 		"CF-Connecting-IP": "203.0.113.7",
 		"X-Forwarded-For":  "1.2.3.4",
-	}, func(c *fiber.Ctx) {
+	}, func(c *http.Request) {
 		AuthFailure(c, "invalid token")
 	})
 
@@ -121,15 +113,15 @@ func TestNeverLogsCredentials(t *testing.T) {
 	cases := []struct {
 		name   string
 		header string
-		emit   func(c *fiber.Ctx)
+		emit   func(c *http.Request)
 	}{
-		{"general token", "Bearer " + generalToken, func(c *fiber.Ctx) {
+		{"general token", "Bearer " + generalToken, func(c *http.Request) {
 			AuthFailure(c, "invalid token")
 		}},
-		{"bucket token", "Bearer tedarik:" + bucketSecret, func(c *fiber.Ctx) {
+		{"bucket token", "Bearer tedarik:" + bucketSecret, func(c *http.Request) {
 			ScopedTokenOnOperatorRoute(c, "tedarik")
 		}},
-		{"bucket denied", "Bearer tedarik:" + bucketSecret, func(c *fiber.Ctx) {
+		{"bucket denied", "Bearer tedarik:" + bucketSecret, func(c *http.Request) {
 			BucketAccessDenied(c, "tedarik", "sovtajyeri")
 		}},
 	}
@@ -141,16 +133,9 @@ func TestNeverLogsCredentials(t *testing.T) {
 			zlog.Logger = zerolog.New(&buf)
 			t.Cleanup(func() { zlog.Logger = previous })
 
-			app := fiber.New()
-			app.Post("/upload", func(c *fiber.Ctx) error {
-				tc.emit(c)
-				return c.SendString("done")
-			})
 			req := httptest.NewRequest("POST", "/upload", nil)
 			req.Header.Set("Authorization", tc.header)
-			if _, err := app.Test(req); err != nil {
-				t.Fatalf("request failed: %v", err)
-			}
+			tc.emit(req)
 
 			out := buf.String()
 			for _, secret := range []string{generalToken, bucketSecret, tc.header} {

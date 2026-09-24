@@ -7,15 +7,18 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/go-chi/chi/v5"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/service"
 )
 
@@ -108,15 +111,13 @@ func TestGetImage_Integration(t *testing.T) {
 
 	imageSvc := &service.ImageService{MinioClient: cl}
 	h := NewImage(cl, service.NewAwsService(), service.NewArchive(service.NewAwsService()), imageSvc)
-	app := fiber.New()
-	app.Get("/:bucket/*", h.GetImage)
+	app := testRouter(func(r chi.Router) {
+		r.Method(http.MethodGet, "/{bucket}/*", httpx.Handler(h.GetImage))
+	})
 
 	t.Run("stream original image unchanged", func(t *testing.T) {
-		resp, err := app.Test(httptest.NewRequest("GET", "/"+bucket+"/pic.png", nil), -1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if resp.StatusCode != fiber.StatusOK {
+		resp := serve(app, httptest.NewRequest("GET", "/"+bucket+"/pic.png", nil))
+		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d", resp.StatusCode)
 		}
 		body, _ := io.ReadAll(resp.Body)
@@ -129,11 +130,8 @@ func TestGetImage_Integration(t *testing.T) {
 	})
 
 	t.Run("stream non-image (pdf) unchanged", func(t *testing.T) {
-		resp, err := app.Test(httptest.NewRequest("GET", "/"+bucket+"/doc.pdf", nil), -1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if resp.StatusCode != fiber.StatusOK {
+		resp := serve(app, httptest.NewRequest("GET", "/"+bucket+"/doc.pdf", nil))
+		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d", resp.StatusCode)
 		}
 		body, _ := io.ReadAll(resp.Body)
@@ -146,11 +144,8 @@ func TestGetImage_Integration(t *testing.T) {
 	})
 
 	t.Run("resize image is buffered and shrunk", func(t *testing.T) {
-		resp, err := app.Test(httptest.NewRequest("GET", "/"+bucket+"/pic.png?width=60", nil), -1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if resp.StatusCode != fiber.StatusOK {
+		resp := serve(app, httptest.NewRequest("GET", "/"+bucket+"/pic.png?width=60", nil))
+		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d", resp.StatusCode)
 		}
 		body, _ := io.ReadAll(resp.Body)

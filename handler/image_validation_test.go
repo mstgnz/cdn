@@ -5,24 +5,27 @@ import (
 	"encoding/json"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/go-chi/chi/v5"
+
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/service"
 )
 
 // newImageApp builds the image handler with a nil MinIO client. The validation
 // paths under test reject the request before any MinIO call, so the nil client
 // is never dereferenced.
-func newImageApp() *fiber.App {
+func newImageApp() http.Handler {
 	h := NewImage(nil, service.NewAwsService(), service.NewArchive(service.NewAwsService()), &service.ImageService{})
-	app := fiber.New()
-	app.Post("/upload", h.UploadImage)
-	app.Post("/resize", h.ResizeImage)
-	app.Post("/upload-url", h.UploadWithUrl)
-	app.Delete("/batch/delete", h.BatchDelete)
-	return app
+	return testRouter(func(r chi.Router) {
+		r.Method(http.MethodPost, "/upload", httpx.Handler(h.UploadImage))
+		r.Method(http.MethodPost, "/resize", httpx.Handler(h.ResizeImage))
+		r.Method(http.MethodPost, "/upload-url", httpx.Handler(h.UploadWithUrl))
+		r.Method(http.MethodDelete, "/batch/delete", httpx.Handler(h.BatchDelete))
+	})
 }
 
 // multipartForm builds a multipart body with optional fields and an optional
@@ -57,11 +60,8 @@ func TestUploadImage_NoFile_BadRequest(t *testing.T) {
 	req := httptest.NewRequest("POST", "/upload", body)
 	req.Header.Set("Content-Type", ct)
 
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusBadRequest {
+	resp := serve(app, req)
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 when no file", resp.StatusCode)
 	}
 }
@@ -72,11 +72,8 @@ func TestResizeImage_NoFile_BadRequest(t *testing.T) {
 	req := httptest.NewRequest("POST", "/resize", body)
 	req.Header.Set("Content-Type", ct)
 
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusBadRequest {
+	resp := serve(app, req)
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 when no file", resp.StatusCode)
 	}
 }
@@ -90,11 +87,8 @@ func TestResizeImage_NonImagePassthrough(t *testing.T) {
 	req := httptest.NewRequest("POST", "/resize", body)
 	req.Header.Set("Content-Type", ct)
 
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusOK {
+	resp := serve(app, req)
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 	got, _ := io.ReadAll(resp.Body)
@@ -108,11 +102,8 @@ func TestUploadWithUrl_InvalidBody_BadRequest(t *testing.T) {
 	req := httptest.NewRequest("POST", "/upload-url", bytes.NewReader([]byte("{not-json")))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusBadRequest {
+	resp := serve(app, req)
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 on invalid body", resp.StatusCode)
 	}
 }
@@ -125,11 +116,8 @@ func TestUploadWithUrl_PrivateURL_BadRequest(t *testing.T) {
 	req := httptest.NewRequest("POST", "/upload-url", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusBadRequest {
+	resp := serve(app, req)
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 on private URL", resp.StatusCode)
 	}
 }
@@ -151,11 +139,8 @@ func TestBatchDelete_TooManyFiles_BadRequest(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/batch/delete", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusBadRequest {
+	resp := serve(app, req)
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 on oversized batch", resp.StatusCode)
 	}
 }
@@ -165,11 +150,8 @@ func TestBatchDelete_InvalidBody_BadRequest(t *testing.T) {
 	req := httptest.NewRequest("DELETE", "/batch/delete", bytes.NewReader([]byte("{not-json")))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusBadRequest {
+	resp := serve(app, req)
+	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 on invalid body", resp.StatusCode)
 	}
 }

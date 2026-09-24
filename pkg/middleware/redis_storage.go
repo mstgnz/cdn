@@ -27,7 +27,7 @@ func sanitizeKey(key string) string {
 	return key
 }
 
-// RedisStorage implements fiber.Storage interface for Redis
+// RedisStorage is the rate limiter's store: keys sanitized, values opaque.
 type RedisStorage struct {
 	cache service.CacheService
 }
@@ -43,11 +43,9 @@ func NewRedisStorage() (*RedisStorage, error) {
 
 // Get retrieves a value from Redis.
 //
-// fiber's Storage contract is that a key which does not exist returns
-// (nil, nil), not an error. That distinction matters here because this adapter
-// backs the rate limiter, where the first request from any client IP is a miss
-// by definition: passing the miss up as an error both violated the contract and
-// meant every rate-limited request produced a log line.
+// A key which does not exist returns (nil, nil), not an error. The limiter's
+// first request from any client IP is a miss by definition, and reporting it as
+// an error used to write a log line for every rate-limited request.
 func (r *RedisStorage) Get(key string) ([]byte, error) {
 	val, err := r.cache.Get(sanitizeKey(key))
 	if errors.Is(err, service.ErrCacheMiss) {

@@ -1,10 +1,11 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/mstgnz/cdn/pkg/config"
 )
 
@@ -16,9 +17,7 @@ var (
 	ErrInvalidToken      = errors.New("invalid token")
 )
 
-// principalLocalsKey is the fiber Locals key under which the auth middleware
-// stores the resolved principal.
-const principalLocalsKey = "cdn_principal"
+type principalKey struct{}
 
 // Principal is the identity behind an authenticated request.
 type Principal struct {
@@ -31,8 +30,8 @@ type Principal struct {
 }
 
 // BearerToken extracts the raw bearer credential from the Authorization header.
-func BearerToken(c *fiber.Ctx) (string, error) {
-	authHeader := c.Get("Authorization")
+func BearerToken(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" {
 		return "", ErrNoToken
 	}
@@ -55,8 +54,8 @@ func BearerToken(c *fiber.Ctx) (string, error) {
 // For a bucket-scoped token the bucket prefix is attacker-controlled input and
 // grants nothing on its own: the secret is compared, in constant time, against
 // the entry for that exact bucket and no other.
-func ResolvePrincipal(c *fiber.Ctx) (Principal, error) {
-	raw, err := BearerToken(c)
+func ResolvePrincipal(r *http.Request) (Principal, error) {
+	raw, err := BearerToken(r)
 	if err != nil {
 		return Principal{}, err
 	}
@@ -72,16 +71,16 @@ func ResolvePrincipal(c *fiber.Ctx) (Principal, error) {
 	return Principal{Scoped: true, Bucket: name}, nil
 }
 
-// StorePrincipal records p on the request context for downstream handlers.
-func StorePrincipal(c *fiber.Ctx, p Principal) {
-	c.Locals(principalLocalsKey, p)
+// WithPrincipal returns r carrying p for downstream handlers.
+func WithPrincipal(r *http.Request, p Principal) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), principalKey{}, p))
 }
 
 // PrincipalFrom returns the principal stored by the auth middleware. A missing
 // principal yields the zero value, i.e. the unrestricted general token, so a
 // route wired without the bucket-aware middleware keeps its previous behaviour.
-func PrincipalFrom(c *fiber.Ctx) Principal {
-	if p, ok := c.Locals(principalLocalsKey).(Principal); ok {
+func PrincipalFrom(r *http.Request) Principal {
+	if p, ok := r.Context().Value(principalKey{}).(Principal); ok {
 		return p
 	}
 	return Principal{}

@@ -6,10 +6,9 @@ import (
 	"image/color"
 	"image/png"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
-
-	"github.com/gofiber/fiber/v2"
 )
 
 // The stdlib image package is aliased because this package already declares a
@@ -48,11 +47,8 @@ func TestResizeImageReturnsTheResizedBytes(t *testing.T) {
 	req := httptest.NewRequest("POST", "/resize", body)
 	req.Header.Set("Content-Type", ct)
 
-	resp, err := app.Test(req, -1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resp.StatusCode != fiber.StatusOK {
+	resp := serve(app, req)
+	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -12,7 +13,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/glacier"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
+	"github.com/go-chi/chi/v5"
+
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/service"
 )
 
@@ -68,15 +71,15 @@ func (m *mockAwsService) S3GetObject(context.Context, string, string) (*s3.GetOb
 }
 func (m *mockAwsService) DeleteObjects(string, []string) error { return nil }
 
-func newAwsApp(mock service.AwsService) *fiber.App {
+func newAwsApp(mock service.AwsService) http.Handler {
 	h := NewAwsHandler(mock)
-	app := fiber.New()
-	app.Get("/aws/:bucket/exists", h.BucketExists)
-	app.Get("/aws/bucket-list", h.BucketList)
-	app.Post("/aws/glacier/:vault/jobs/:jobId/async-download", h.GlacierInitiateAsyncDownload)
-	app.Get("/aws/glacier/downloads/:downloadJobId/status", h.GlacierCheckDownloadStatus)
-	app.Get("/aws/glacier/:vault/jobs/:jobId/status", h.GlacierJobStatus)
-	return app
+	return testRouter(func(r chi.Router) {
+		r.Method(http.MethodGet, "/aws/{bucket}/exists", httpx.Handler(h.BucketExists))
+		r.Method(http.MethodGet, "/aws/bucket-list", httpx.Handler(h.BucketList))
+		r.Method(http.MethodPost, "/aws/glacier/{vault}/jobs/{jobId}/async-download", httpx.Handler(h.GlacierInitiateAsyncDownload))
+		r.Method(http.MethodGet, "/aws/glacier/downloads/{downloadJobId}/status", httpx.Handler(h.GlacierCheckDownloadStatus))
+		r.Method(http.MethodGet, "/aws/glacier/{vault}/jobs/{jobId}/status", httpx.Handler(h.GlacierJobStatus))
+	})
 }
 
 // TestAwsHandler_JobStatus_NilResultNoPanic guards the nil-deref hardening:
@@ -85,7 +88,7 @@ func newAwsApp(mock service.AwsService) *fiber.App {
 func TestAwsHandler_JobStatus_NilResultNoPanic(t *testing.T) {
 	app := newAwsApp(&mockAwsService{})
 	resp := doReq(t, app, "GET", "/aws/glacier/myvault/jobs/job123/status")
-	if resp.StatusCode != fiber.StatusInternalServerError {
+	if resp.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500 (no panic on nil job status)", resp.StatusCode)
 	}
 }
@@ -94,7 +97,7 @@ func TestAwsHandler_BucketExists(t *testing.T) {
 	t.Run("exists", func(t *testing.T) {
 		app := newAwsApp(&mockAwsService{bucketExists: true})
 		resp := doReq(t, app, "GET", "/aws/mybucket/exists")
-		if resp.StatusCode != fiber.StatusOK {
+		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200", resp.StatusCode)
 		}
 		if !decodeBody(t, resp).Success {
@@ -105,7 +108,7 @@ func TestAwsHandler_BucketExists(t *testing.T) {
 	t.Run("missing", func(t *testing.T) {
 		app := newAwsApp(&mockAwsService{bucketExists: false})
 		resp := doReq(t, app, "GET", "/aws/mybucket/exists")
-		if resp.StatusCode != fiber.StatusNotFound {
+		if resp.StatusCode != http.StatusNotFound {
 			t.Fatalf("status = %d, want 404", resp.StatusCode)
 		}
 		if decodeBody(t, resp).Success {
@@ -119,7 +122,7 @@ func TestAwsHandler_BucketList(t *testing.T) {
 		name := "b1"
 		app := newAwsApp(&mockAwsService{listBuckets: []s3types.Bucket{{Name: &name}}})
 		resp := doReq(t, app, "GET", "/aws/bucket-list")
-		if resp.StatusCode != fiber.StatusOK {
+		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200", resp.StatusCode)
 		}
 		if !decodeBody(t, resp).Success {
@@ -154,11 +157,8 @@ func TestAwsHandler_AsyncDownloadValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest("POST", target, bytes.NewReader([]byte(tc.body)))
 			req.Header.Set("Content-Type", "application/json")
-			resp, err := app.Test(req, -1)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if resp.StatusCode != fiber.StatusBadRequest {
+			resp := serve(app, req)
+			if resp.StatusCode != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400", resp.StatusCode)
 			}
 		})
@@ -168,7 +168,7 @@ func TestAwsHandler_AsyncDownloadValidation(t *testing.T) {
 func TestAwsHandler_CheckDownloadStatus_NotFound(t *testing.T) {
 	app := newAwsApp(&mockAwsService{})
 	resp := doReq(t, app, "GET", "/aws/glacier/downloads/does-not-exist/status")
-	if resp.StatusCode != fiber.StatusNotFound {
+	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
 	}
 }

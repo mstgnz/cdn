@@ -2,9 +2,9 @@ package handler
 
 import (
 	"context"
+	"net/http"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/pkg/observability"
 	"github.com/mstgnz/cdn/service"
@@ -32,7 +32,7 @@ func isCoreHealthy(minioHealth, cacheHealth string) bool {
 }
 
 // HealthCheck handles health check requests
-func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
+func (h *HealthChecker) HealthCheck(w http.ResponseWriter, r *http.Request) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -46,11 +46,11 @@ func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
 	// the whole CDN report "degraded" (503) while MinIO + cache are fine, and
 	// uptime monitors flap on it. Overall health = the always-on core only.
 	overallStatus := "healthy"
-	statusCode := fiber.StatusOK
+	statusCode := http.StatusOK
 
 	if !isCoreHealthy(minioHealth, cacheHealth) {
 		overallStatus = "degraded"
-		statusCode = fiber.StatusServiceUnavailable
+		statusCode = http.StatusServiceUnavailable
 	}
 
 	data := map[string]any{
@@ -63,7 +63,7 @@ func (h *HealthChecker) HealthCheck(c *fiber.Ctx) error {
 		"timestamp": time.Now().UTC(),
 	}
 
-	return service.Response(c, statusCode, true, "Health check", data)
+	return service.Response(w, statusCode, true, "Health check", data)
 }
 
 func (h *HealthChecker) checkMinioHealth(ctx context.Context) string {

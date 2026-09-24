@@ -3,15 +3,16 @@ package unit
 import (
 	"bytes"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/gofiber/fiber/v2"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/mstgnz/cdn/handler"
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/service"
 	"github.com/stretchr/testify/assert"
 )
@@ -46,13 +47,12 @@ func (stubAws) ListBuckets() ([]s3types.Bucket, error) { return nil, nil }
 // dependency) is unreachable, the endpoint reports degraded with 503 even
 // though cache and AWS are healthy. Deterministic and infra-free.
 func TestHealthCheck_Degraded(t *testing.T) {
-	app := fiber.New()
 	hc := handler.NewHealthChecker(deadMinio(t), stubAws{}, stubCache{})
-	app.Get("/health", hc.HealthCheck)
 
-	resp, err := app.Test(httptest.NewRequest("GET", "/health", nil), -1)
-	assert.NoError(t, err)
-	assert.Equal(t, fiber.StatusServiceUnavailable, resp.StatusCode)
+	rec := httptest.NewRecorder()
+	httpx.Handler(hc.HealthCheck).ServeHTTP(rec, httptest.NewRequest("GET", "/health", nil))
+	resp := rec.Result()
+	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 
 	var body map[string]any
 	assert.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
@@ -71,16 +71,15 @@ func TestHealthCheck_Degraded(t *testing.T) {
 // TestUploadImage_InvalidForm verifies UploadImage rejects a non-multipart
 // body before touching storage (returns 400 "File Not Found!").
 func TestUploadImage_InvalidForm(t *testing.T) {
-	app := fiber.New()
 	h := handler.NewImage(deadMinio(t), stubAws{}, service.NewArchive(stubAws{}), &service.ImageService{})
-	app.Post("/upload", h.UploadImage)
 
 	req := httptest.NewRequest("POST", "/upload", bytes.NewBuffer([]byte(`{}`)))
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := app.Test(req, -1)
-	assert.NoError(t, err)
-	assert.Equal(t, fiber.StatusBadRequest, resp.StatusCode)
+	rec := httptest.NewRecorder()
+	httpx.Handler(h.UploadImage).ServeHTTP(rec, req)
+	resp := rec.Result()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 
 	var body map[string]any
 	assert.NoError(t, json.NewDecoder(resp.Body).Decode(&body))

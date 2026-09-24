@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/joho/godotenv"
 	"github.com/mstgnz/cdn/pkg/config"
+	"github.com/mstgnz/cdn/pkg/httpx"
 )
 
 const (
@@ -113,8 +113,8 @@ func DownloadFile(filepath string, url string) error {
 // (/aws, /minio, /monitor, /metrics): those act on any bucket or expose
 // service-wide data, so a credential limited to a single bucket must not reach
 // them. Bucket-aware routes use ResolvePrincipal instead.
-func CheckToken(c *fiber.Ctx) error {
-	raw, err := BearerToken(c)
+func CheckToken(r *http.Request) error {
+	raw, err := BearerToken(r)
 	if err != nil {
 		return err
 	}
@@ -140,12 +140,15 @@ func TokenValid(clientToken string) bool {
 	return subtle.ConstantTimeCompare([]byte(clientToken), []byte(serverToken)) == 1
 }
 
-func Response(c *fiber.Ctx, code int, success bool, message string, data any) error {
-	return c.Status(code).JSON(fiber.Map{
+// Response writes the envelope every JSON endpoint answers with. It returns nil
+// so handlers can end with `return service.Response(...)`.
+func Response(w http.ResponseWriter, code int, success bool, message string, data any) error {
+	httpx.JSON(w, code, map[string]any{
 		"success": success,
 		"message": message,
 		"data":    data,
 	})
+	return nil
 }
 
 // HasUnsafeObjectKey reports whether an object key is empty or contains a ".."
@@ -177,39 +180,28 @@ func IsImageFile(filename string) bool {
 	return false
 }
 
-func GetWidthAndHeight(c *fiber.Ctx, requestType string) (bool, uint, uint) {
+func GetWidthAndHeight(r *http.Request, requestType string) (bool, uint, uint) {
 	width, height := 0, 0
 	resize := false
 
+	var get func(string) string
 	switch requestType {
 	case ParamsType:
-		if getWidth, err := strconv.Atoi(c.Params("width")); err == nil {
-			width = getWidth
-		}
-		if getHeight, err := strconv.Atoi(c.Params("height")); err == nil {
-			height = getHeight
-		}
+		get = func(k string) string { return httpx.Param(r, k) }
 	case FormsType:
-		if getWidth, err := strconv.Atoi(c.FormValue("width")); err == nil {
-			width = getWidth
-		}
-		if getHeight, err := strconv.Atoi(c.FormValue("height")); err == nil {
-			height = getHeight
-		}
+		get = func(k string) string { return httpx.FormValue(r, k) }
 	case HeadersType:
-		if getWidth, err := strconv.Atoi(c.Get("width")); err == nil {
-			width = getWidth
-		}
-		if getHeight, err := strconv.Atoi(c.Get("height")); err == nil {
-			height = getHeight
-		}
+		get = r.Header.Get
 	case QueryType:
-		if getWidth, err := strconv.Atoi(c.Query("width")); err == nil {
-			width = getWidth
-		}
-		if getHeight, err := strconv.Atoi(c.Query("height")); err == nil {
-			height = getHeight
-		}
+		get = func(k string) string { return httpx.Query(r, k) }
+	default:
+		get = func(string) string { return "" }
+	}
+	if getWidth, err := strconv.Atoi(get("width")); err == nil {
+		width = getWidth
+	}
+	if getHeight, err := strconv.Atoi(get("height")); err == nil {
+		height = getHeight
 	}
 
 	// Clamp requested dimensions. Negative values are floored to 0 (a negative

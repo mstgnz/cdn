@@ -1,34 +1,47 @@
 package observability
 
 import (
+	"net/http"
 	"strconv"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
 )
 
-// PrometheusMiddleware middleware for monitoring Fiber requests
-func PrometheusMiddleware() fiber.Handler {
-	return func(c *fiber.Ctx) error {
-		start := time.Now()
-		method := c.Method()
+// statusReporter is the part of the request's response writer this needs;
+// wrappers that do not report it are unwrapped until one does.
+type statusReporter interface{ Status() int }
 
-		// Process request
-		chainErr := c.Next()
+func statusOf(w http.ResponseWriter) int {
+	for {
+		if s, ok := w.(statusReporter); ok {
+			return s.Status()
+		}
+		u, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return 0
+		}
+		w = u.Unwrap()
+	}
+}
 
-		// Record metrics. Use the matched ROUTE PATTERN (e.g. "/:bucket/*")
-		// as the endpoint label, never the raw request path. On a CDN the raw
-		// path is effectively unbounded (every distinct object URL), which
-		// would create one Prometheus series per URL: an unbounded memory leak
-		// and a /metrics scrape that grows without limit. The route pattern
-		// keeps cardinality bounded to the number of registered routes.
-		endpoint := c.Route().Path
-		duration := time.Since(start).Seconds()
-		status := strconv.Itoa(c.Response().StatusCode())
+// PrometheusMiddleware counts requests and their duration.
+//
+// The endpoint label is the matched ROUTE PATTERN (e.g. "/:bucket/*"), never the
+// raw path: on a CDN the raw path is effectively unbounded, one series per
+// object URL. endpoint returns the pattern after the request was routed; status
+// comes from w, which must report the status it wrote.
+func PrometheusMiddleware(endpoint func(*http.Request) string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			next.ServeHTTP(w, r)
 
-		RequestCounter.WithLabelValues(method, endpoint, status).Inc()
-		RequestDuration.WithLabelValues(method, endpoint).Observe(duration)
-
-		return chainErr
+			status := http.StatusOK
+			if s := statusOf(w); s != 0 {
+				status = s
+			}
+			label := endpoint(r)
+			RequestCounter.WithLabelValues(r.Method, label, strconv.Itoa(status)).Inc()
+			RequestDuration.WithLabelValues(r.Method, label).Observe(time.Since(start).Seconds())
+		})
 	}
 }

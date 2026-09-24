@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -13,20 +14,16 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/favicon"
-	fiberrecover "github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/gofiber/websocket/v2"
 	"github.com/joho/godotenv"
 	"github.com/minio/minio-go/v7"
 	"gopkg.in/gographics/imagick.v3/imagick"
 
 	"github.com/mstgnz/cdn/handler"
-	"github.com/mstgnz/cdn/pkg/audit"
 	"github.com/mstgnz/cdn/pkg/config"
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/pkg/middleware"
 	"github.com/mstgnz/cdn/pkg/observability"
+	"github.com/mstgnz/cdn/router"
 	"github.com/mstgnz/cdn/service"
 )
 
@@ -202,175 +199,47 @@ func main() {
 		readBufferKB = 4
 	}
 
-	app := fiber.New(fiber.Config{
-		BodyLimit: 100 * 1024 * 1024, // 100MB to match nginx configuration
-		// Enable graceful shutdown
-		DisableStartupMessage: true,
-		IdleTimeout:           60 * time.Second,
-		ReadTimeout:           60 * time.Second,
-		WriteTimeout:          60 * time.Second,
-		ReadBufferSize:        readBufferKB * 1024,
-	})
-
-	// Outermost safety net: recover from any handler panic and return 500 with
-	// a logged stack trace, so a single bad request can never crash the process.
-	app.Use(fiberrecover.New(fiberrecover.Config{EnableStackTrace: true}))
-
-	// Global rate limiter - 100 requests per minute with IP + Token based protection
-	app.Use(middleware.DefaultAdvancedRateLimiter())
-
-	// CORS middleware
-	app.Use(cors.New(cors.Config{
-		AllowOrigins: "*",
-		AllowHeaders: "*",
-		AllowMethods: "*",
-		MaxAge:       86400,
-	}))
-
-	// Prevent MIME sniffing on served objects: user-uploaded content must not be
-	// reinterpreted as HTML/script in the CDN origin context.
-	app.Use(func(c *fiber.Ctx) error {
-		c.Set("X-Content-Type-Options", "nosniff")
-		return c.Next()
-	})
-
-	app.Use(favicon.New(favicon.Config{
-		File: "./public/favicon.png",
-	}))
-
 	disableDelete := config.GetEnvAsBoolOrDefault("DISABLE_DELETE", false)
 	disableUpload := config.GetEnvAsBoolOrDefault("DISABLE_UPLOAD", false)
 	disableGet := config.GetEnvAsBoolOrDefault("DISABLE_GET", false)
 
-	// scalar
-	app.Get("/scalar.yaml", func(c *fiber.Ctx) error {
-		// Read the scalar file
-		scalarContent, err := os.ReadFile("./public/scalar.yaml")
-		if err != nil {
-			return c.Status(500).JSON(fiber.Map{
-				"error": "Failed to read scalar file",
-			})
-		}
-
-		// Replace environment variables
-		scalarContent = []byte(strings.ReplaceAll(string(scalarContent), "${APP_URL}", config.GetEnvOrDefault("APP_URL", "https://cdn.example.com")))
-
-		// Set content type and send the modified content
-		c.Set("Content-Type", "text/yaml")
-		return c.Send(scalarContent)
-	})
-
-	// Health check endpoint
-	healthChecker := handler.NewHealthChecker(minioClient, awsService, cacheService)
-	app.Get("/health", healthChecker.HealthCheck)
-
-	// Prometheus middleware
-	app.Use(observability.PrometheusMiddleware())
-
-	// Metrics endpoint (auth-gated: Prometheus sends the token as a Bearer header)
-	app.Get("/metrics", GeneralAuthMiddleware, observability.MetricsHandler)
-
-	// WebSocket middleware
-	app.Use("/ws", func(c *fiber.Ctx) error {
-		if !websocket.IsWebSocketUpgrade(c) {
-			return fiber.ErrUpgradeRequired
-		}
-		// WebSocket clients (browsers) cannot set an Authorization header, so the
-		// token is taken from the query string and checked constant-time. This
-		// endpoint streams the same stats as the auth-gated /monitor.
-		if !service.TokenValid(c.Query("token")) {
-			audit.AuthFailure(c, service.ErrInvalidToken.Error())
-			return fiber.ErrUnauthorized
-		}
-		c.Locals("allowed", true)
-		return c.Next()
-	})
-
-	// WebSocket endpoint
-	app.Get("/ws", websocket.New(func(c *websocket.Conn) {
-		wsHandler.HandleWebSocket(c)
-	}))
-
-	// Monitoring endpoint
-	app.Get("/monitor", GeneralAuthMiddleware, wsHandler.MonitorStats)
-
-	// Aws
-	aws := app.Group("/aws", GeneralAuthMiddleware)
-	aws.Get("/bucket-list", awsHandler.BucketList)
-	aws.Get("/:bucket/exists", awsHandler.BucketExists)
-	aws.Get("/vault-list", awsHandler.GlacierVaultList)
-
-	// Glacier endpoints
-	aws.Post("/glacier/:vault/initiate-retrieval/:archiveId", awsHandler.GlacierInitiateRetrieval)
-	aws.Get("/glacier/:vault/jobs", awsHandler.GlacierListJobs)
-	aws.Get("/glacier/:vault/jobs/:jobId/status", awsHandler.GlacierJobStatus)
-	aws.Get("/glacier/:vault/jobs/:jobId/download", awsHandler.GlacierDownloadArchive)
-	aws.Post("/glacier/:vault/inventory", awsHandler.GlacierInventoryRetrieval)
-
-	// Async download endpoints
-	aws.Post("/glacier/:vault/jobs/:jobId/async-download", awsHandler.GlacierInitiateAsyncDownload)
-	aws.Get("/glacier/downloads/:downloadJobId/status", awsHandler.GlacierCheckDownloadStatus)
-
-	// Minio
-	io := app.Group("/minio", GeneralAuthMiddleware)
-	io.Get("/bucket-list", minioHandler.BucketList)
-	io.Get("/:bucket/exists", minioHandler.BucketExists)
-	io.Get("/:bucket/create", minioHandler.CreateBucket)
-	io.Delete("/:bucket/delete", minioHandler.RemoveBucket)
-
-	// resize
-	// Auth-gated: /resize feeds arbitrary request bytes straight into ImageMagick
-	// (decode + resize), so it must not be an unauthenticated compute/attack
-	// surface like the other write endpoints.
-	app.Post("/resize", BucketAuthMiddleware, imageHandler.ResizeImage)
-
-	// On-demand archiving. Registered before the /:bucket/* wildcard so it is not
-	// shadowed by it, and behind BucketAuthMiddleware so a scoped token can move
-	// its own bucket's objects to cold storage but nobody else's.
-	//
-	// Not gated by DISABLE_DELETE: the object stays readable at the same URL
-	// afterwards, so this is a move between tiers rather than a deletion.
-	app.Post("/archive", BucketAuthMiddleware, archiveHandler.ArchiveObjects)
-
-	// Minio
-	if !disableGet {
-		/*
-			- The width and height parameters use the w and h prefix to avoid conflicts with numeric values in file paths.
-			- Example: a file path like `photos/2024/01/30/image.jpg` can be misinterpreted as resizing parameters.
-
-			- The query parameters are used to resize the image.
-			- Example: `https://cdn.example.com/photos/2024/01/30/image.jpg?width=100&height=100`
-		*/
-		app.Get("/:bucket/w::width/h::height/*", imageHandler.GetImage)
-		app.Get("/:bucket/w::width/*", imageHandler.GetImage)
-		app.Get("/:bucket/h::height/*", imageHandler.GetImage)
-		app.Get("/:bucket/*", imageHandler.GetImage)
+	deps := router.Deps{
+		Image:         imageHandler,
+		AWS:           awsHandler,
+		Minio:         minioHandler,
+		WS:            wsHandler,
+		Archive:       archiveHandler,
+		Health:        handler.NewHealthChecker(minioClient, awsService, cacheService),
+		GlobalLimiter: middleware.DefaultAdvancedRateLimiter(), // RATE_LIMIT per minute, IP + verified identity
+		DisableGet:    disableGet,
+		DisableUpload: disableUpload,
+		DisableDelete: disableDelete,
+		FaviconFile:   "./public/favicon.png",
 	}
-
-	// Batch delete must be registered BEFORE the /:bucket/* wildcard below,
-	// otherwise the wildcard matches "DELETE /batch/delete" (bucket="batch",
-	// *="delete") and shadows it, routing to DeleteImage instead of BatchDelete.
 	if !disableUpload {
-		app.Delete("/batch/delete", BucketAuthMiddleware, imageHandler.BatchDelete)
+		// Stricter limit for the upload routes, UPLOAD_RATE_LIMIT per minute.
+		deps.UploadLimiter = middleware.NewAdvancedRateLimiter(config.GetEnvAsIntOrDefault("UPLOAD_RATE_LIMIT", 50), time.Minute)
 	}
 
-	if !disableDelete {
-		app.Delete("/:bucket/*", BucketAuthMiddleware, imageHandler.DeleteImage)
+	// Timeouts: the values the fiber server ran with, plus ReadHeaderTimeout
+	// against Slowloris. security.md s16 asks for 15s/30s/16KB; those would cut
+	// 100 MB uploads and large downloads that work today and refuse headers nginx
+	// lets through, so the deviation is deliberate. The write deadline restarts
+	// when the response starts, as fasthttp's did (httpx.Wrap).
+	const (
+		ioTimeout   = 60 * time.Second
+		bodyLimit   = 100 * 1024 * 1024 // matches nginx client_max_body_size
+		idleTimeout = 60 * time.Second
+	)
+	srv := &http.Server{
+		Addr:              fmt.Sprintf(":%s", config.GetEnvOrDefault("APP_PORT", "9090")),
+		Handler:           middleware.Transport(bodyLimit, httpx.Wrap(ioTimeout, router.New(deps))),
+		ReadTimeout:       ioTimeout,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      ioTimeout,
+		IdleTimeout:       idleTimeout,
+		MaxHeaderBytes:    readBufferKB * 1024,
 	}
-
-	// Upload endpoints with stricter rate limit - 50 requests per minute
-	if !disableUpload {
-		uploadGroup := app.Group("/")
-		uploadGroup.Use(middleware.NewAdvancedRateLimiter(config.GetEnvAsIntOrDefault("UPLOAD_RATE_LIMIT", 50), time.Minute))
-		uploadGroup.Post("/upload", BucketAuthMiddleware, imageHandler.UploadImage)
-		uploadGroup.Post("/upload-url", BucketAuthMiddleware, imageHandler.UploadWithUrl)
-		uploadGroup.Post("/batch/upload", BucketAuthMiddleware, imageHandler.BatchUpload)
-	}
-
-	// Index
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.SendFile("./public/scalar.html")
-	})
 
 	// Graceful shutdown setup
 	shutdownChan := make(chan os.Signal, 1)
@@ -378,11 +247,8 @@ func main() {
 
 	// Start server in a goroutine
 	go func() {
-		port := fmt.Sprintf(":%s", config.GetEnvOrDefault("APP_PORT", "9090"))
-		if err := app.Listen(port); err != nil {
-			if err.Error() != "server closed" {
-				logger.Fatal().Err(err).Msg("Failed to start server")
-			}
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Fatal().Err(err).Msg("Failed to start server")
 		}
 	}()
 
@@ -403,7 +269,7 @@ func main() {
 	defer shutdownCancel()
 
 	// Perform cleanup
-	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error().Err(err).Msg("Server shutdown failed")
 	}
 
@@ -415,42 +281,6 @@ func main() {
 	}
 
 	logger.Info().Msg("Server gracefully stopped")
-}
-
-// GeneralAuthMiddleware gates the operator routes: it accepts the general TOKEN
-// only, so a bucket-scoped token can never reach an endpoint that acts on
-// arbitrary buckets (list, create, remove) or exposes service-wide data.
-//
-// The 400 status is kept instead of being corrected to 401 so that clients see
-// exactly the response they see today.
-func GeneralAuthMiddleware(c *fiber.Ctx) error {
-	if err := service.CheckToken(c); err != nil {
-		// A credential that is a valid bucket-scoped token is recorded as its own
-		// event: reaching an operator route with one is almost always a
-		// misconfigured client, not an attack, and an operator should not have to
-		// tell those apart from a generic "invalid token". The extra resolve only
-		// runs on the failure path.
-		if p, resolveErr := service.ResolvePrincipal(c); resolveErr == nil && p.Scoped {
-			audit.ScopedTokenOnOperatorRoute(c, p.Bucket)
-		} else {
-			audit.AuthFailure(c, err.Error())
-		}
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
-	}
-	return c.Next()
-}
-
-// BucketAuthMiddleware gates the object write routes. It accepts the general
-// TOKEN as well as a bucket-scoped token, and records the resolved principal so
-// each handler can reconcile it with the bucket named in the request.
-func BucketAuthMiddleware(c *fiber.Ctx) error {
-	p, err := service.ResolvePrincipal(c)
-	if err != nil {
-		audit.AuthFailure(c, err.Error())
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
-	}
-	service.StorePrincipal(c, p)
-	return c.Next()
 }
 
 // watchEnvChanges monitors .env file changes with context support

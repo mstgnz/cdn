@@ -19,26 +19,26 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
 	"github.com/minio/minio-go/v7"
 	"github.com/mstgnz/cdn/pkg/batch"
 	bucketname "github.com/mstgnz/cdn/pkg/bucket"
 	"github.com/mstgnz/cdn/pkg/config"
 	"github.com/mstgnz/cdn/pkg/filetype"
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/pkg/validator"
 	"github.com/mstgnz/cdn/pkg/worker"
 	"github.com/mstgnz/cdn/service"
 )
 
 type Image interface {
-	GetImage(c *fiber.Ctx) error
-	UploadImage(c *fiber.Ctx) error
-	DeleteImage(c *fiber.Ctx) error
-	ResizeImage(c *fiber.Ctx) error
-	UploadWithUrl(c *fiber.Ctx) error
-	BatchUpload(c *fiber.Ctx) error
-	BatchDelete(c *fiber.Ctx) error
+	GetImage(w http.ResponseWriter, r *http.Request) error
+	UploadImage(w http.ResponseWriter, r *http.Request) error
+	DeleteImage(w http.ResponseWriter, r *http.Request) error
+	ResizeImage(w http.ResponseWriter, r *http.Request) error
+	UploadWithUrl(w http.ResponseWriter, r *http.Request) error
+	BatchUpload(w http.ResponseWriter, r *http.Request) error
+	BatchDelete(w http.ResponseWriter, r *http.Request) error
 }
 
 type image struct {
@@ -320,14 +320,14 @@ func NewImage(minioClient *minio.Client, awsService service.AwsService, archive 
 	return img
 }
 
-func (i image) GetImage(c *fiber.Ctx) error {
+func (i image) GetImage(w http.ResponseWriter, r *http.Request) error {
 	ctx := context.Background()
-	bucket := c.Params("bucket")
-	objectName := c.Params("*")
+	bucket := httpx.Param(r, "bucket")
+	objectName := httpx.Param(r, "*")
 
 	// Reject traversal-like keys instead of forwarding them verbatim to MinIO.
 	if service.HasUnsafeObjectKey(objectName) {
-		return c.SendFile("./public/notfound.png")
+		return sendPlaceholder(w, r)
 	}
 
 	var width uint
@@ -343,21 +343,21 @@ func (i image) GetImage(c *fiber.Ctx) error {
 		// request, because those routes still matched and this branch then found
 		// no dimensions. The path form is checked first since it is the more
 		// specific route; a request that carries neither falls through unresized.
-		resize, width, height = service.GetWidthAndHeight(c, service.ParamsType)
+		resize, width, height = service.GetWidthAndHeight(r, service.ParamsType)
 		if !resize {
-			resize, width, height = service.GetWidthAndHeight(c, service.QueryType)
+			resize, width, height = service.GetWidthAndHeight(r, service.QueryType)
 		}
 	}
 
 	if found, err := i.minioClient.BucketExists(ctx, bucket); !found || err != nil {
-		return c.SendFile("./public/notfound.png")
+		return sendPlaceholder(w, r)
 	}
 
 	// MinIO holds the recent window, the archive holds everything. An object the
 	// retention job has already removed locally is still served from here.
 	body, size, err := i.openObject(ctx, bucket, objectName)
 	if err != nil {
-		return c.SendFile("./public/notfound.png")
+		return sendPlaceholder(w, r)
 	}
 
 	// SVG needs its type declared rather than sniffed. http.DetectContentType
@@ -373,7 +373,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	// the guarantee it is meant to give.
 	isSVG := strings.HasSuffix(strings.ToLower(objectName), ".svg")
 	if isSVG {
-		c.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
 	}
 
 	// contentTypeFor keeps the sniffed type for everything else. That is what
@@ -394,7 +394,7 @@ func (i image) GetImage(c *fiber.Ctx) error {
 
 		getByte := service.StreamToByte(body)
 		if len(getByte) == 0 {
-			return c.SendFile("./public/notfound.png")
+			return sendPlaceholder(w, r)
 		}
 
 		// Both calls below decode the image, so the slot has to cover the pair
@@ -412,27 +412,25 @@ func (i image) GetImage(c *fiber.Ctx) error {
 			// turn into days of full-size images. Note that an upstream cache
 			// configured with `proxy_ignore_headers Cache-Control` overrides
 			// this; see nginx.conf, which deliberately does not.
-			c.Set("Cache-Control", "no-store")
-			c.Set("Content-Type", contentTypeFor(getByte))
-			c.Status(http.StatusOK)
-			return c.Send(getByte)
+			w.Header().Set("Cache-Control", "no-store")
+			httpx.Bytes(w, http.StatusOK, contentTypeFor(getByte), getByte)
+			return nil
 		}
 		defer release()
 
 		if err, orjWidth, orjHeight := i.imageService.ImagickGetWidthHeight(getByte); err == nil {
-			c.Set("Width", strconv.Itoa(int(orjWidth)))
-			c.Set("Height", strconv.Itoa(int(orjHeight)))
+			w.Header().Set("Width", strconv.Itoa(int(orjWidth)))
+			w.Header().Set("Height", strconv.Itoa(int(orjHeight)))
 		}
 
-		c.Set("Content-Type", contentTypeFor(getByte))
-		c.Status(http.StatusOK)
-		return c.Send(i.imageService.ImagickResize(getByte, width, height))
+		httpx.Bytes(w, http.StatusOK, contentTypeFor(getByte), i.imageService.ImagickResize(getByte, width, height))
+		return nil
 	}
 
 	// Direct (non-resize) path: stream the object straight to the client with
 	// constant memory, whatever its type or size (original images served
 	// as-is, PDFs, videos, large files). This avoids buffering whole objects
-	// into RAM and the per-request ImageMagick decode. fasthttp closes the
+	// into RAM and the per-request ImageMagick decode. SendStream closes the
 	// stream (and therefore the underlying object) once the response is written.
 	// The size came from openObject, which has already established that the
 	// object exists and is non-empty in whichever tier answered.
@@ -443,16 +441,24 @@ func (i image) GetImage(c *fiber.Ctx) error {
 	n, readErr := io.ReadFull(body, head)
 	if readErr != nil && readErr != io.EOF && readErr != io.ErrUnexpectedEOF {
 		_ = body.Close()
-		return c.SendFile("./public/notfound.png")
+		return sendPlaceholder(w, r)
 	}
 	head = head[:n]
 
-	c.Set("Content-Type", contentTypeFor(head))
-	c.Status(http.StatusOK)
-	return c.SendStream(streamCloser{
+	w.Header().Set("Content-Type", contentTypeFor(head))
+	httpx.SendStream(w, streamCloser{
 		Reader: io.MultiReader(bytes.NewReader(head), body),
 		closer: body,
-	}, int(size))
+	}, size)
+	return nil
+}
+
+// sendPlaceholder answers a missing or unreadable object with the placeholder
+// image and 200, never a 404: a public read endpoint must not tell "never
+// existed" from "gone".
+func sendPlaceholder(w http.ResponseWriter, r *http.Request) error {
+	httpx.SendFile(w, r, "./public/notfound.png")
+	return nil
 }
 
 // openObject returns the object's contents from whichever tier still holds it.
@@ -523,7 +529,7 @@ func inertContentType(sniffed string) string {
 // "gone from both" is not one a public read endpoint should expose.
 var errObjectMissing = errors.New("object not found in storage or archive")
 
-// streamCloser couples the reader handed to fasthttp with the underlying
+// streamCloser couples the reader handed to SendStream with the underlying
 // closer, so closing the response stream also closes the MinIO object.
 // io.MultiReader is not an io.Closer, so without this the object would leak.
 type streamCloser struct {
@@ -533,26 +539,26 @@ type streamCloser struct {
 
 func (s streamCloser) Close() error { return s.closer.Close() }
 
-func (i image) UploadImage(c *fiber.Ctx) error {
+func (i image) UploadImage(w http.ResponseWriter, r *http.Request) error {
 	ctx := context.Background()
 
-	path := c.FormValue("path")
-	file, err := c.FormFile("file")
+	path := httpx.FormValue(r, "path")
+	file, err := httpx.FormFile(r, "file")
 
 	if file == nil || err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!", nil)
+		return service.Response(w, http.StatusBadRequest, false, "File Not Found!", nil)
 	}
 
 	// The bucket a scoped token owns wins over whatever the form says; a scoped
 	// token naming someone else's bucket is refused outright. Deliberately after
 	// the file check so a non-multipart body still reports "File Not Found!"
 	// rather than a bucket complaint.
-	bucket, err := resolveBucket(c, c.FormValue("bucket"))
+	bucket, err := resolveBucket(r, httpx.FormValue(r, "bucket"))
 	if err != nil {
-		return bucketForbidden(c)
+		return bucketForbidden(w)
 	}
 	if bucket == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Bucket is required", nil)
 	}
 
 	// Check to see if the bucket already exists. BucketExists returns
@@ -561,28 +567,28 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	// later PutObject failed with "bucket does not exist").
 	exists, err := i.minioClient.BucketExists(ctx, bucket)
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "bucket check failed: "+err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, "bucket check failed: "+err.Error(), nil)
 	}
 	if !exists {
 		// Only a genuinely new bucket is name-checked. Buckets that already exist
 		// predate this rule and must keep working whatever they are called, so the
 		// check sits here rather than on the upload path as a whole.
 		if err := bucketname.Validate(bucket); err != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+			return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 		}
 		if err := i.minioClient.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
+			return service.Response(w, http.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
 		}
 	}
 
 	// Validate file
 	if err := validator.ValidateFile(file); err != nil {
 		if valErr, ok := err.(*validator.FileValidationError); ok {
-			return service.Response(c, fiber.StatusBadRequest, false, valErr.Message, map[string]string{
+			return service.Response(w, http.StatusBadRequest, false, valErr.Message, map[string]string{
 				"code": valErr.Code,
 			})
 		}
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	// No archive-side bucket check here any more. It used to reject the upload
@@ -599,13 +605,13 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	}(fileBuffer)
 
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	// Parse the file name and extension
 	parseFileName := strings.Split(file.Filename, ".")
 	if len(parseFileName) < 2 {
-		return service.Response(c, fiber.StatusBadRequest, false, "File extension not found!", nil)
+		return service.Response(w, http.StatusBadRequest, false, "File extension not found!", nil)
 	}
 
 	// Generate random name and construct object name
@@ -630,11 +636,11 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		// Validate file content
 		if err := validator.ValidateFileContent(fileContent); err != nil {
 			if valErr, ok := err.(*validator.FileValidationError); ok {
-				return service.Response(c, fiber.StatusBadRequest, false, valErr.Message, map[string]string{
+				return service.Response(w, http.StatusBadRequest, false, valErr.Message, map[string]string{
 					"code": valErr.Code,
 				})
 			}
-			return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+			return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 		}
 
 		_, _ = fileBuffer.Seek(0, 0)
@@ -646,18 +652,18 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 		// files pass through untouched.
 		orjWidth, orjHeight, verr := i.validateImageContent(file.Filename, fileContent)
 		if verr != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, "invalid image content", map[string]string{
+			return service.Response(w, http.StatusBadRequest, false, "invalid image content", map[string]string{
 				"code": "INVALID_IMAGE_CONTENT",
 			})
 		}
 		if orjWidth > 0 && orjHeight > 0 {
-			c.Set("Width", strconv.Itoa(int(orjWidth)))
-			c.Set("Height", strconv.Itoa(int(orjHeight)))
+			w.Header().Set("Width", strconv.Itoa(int(orjWidth)))
+			w.Header().Set("Height", strconv.Itoa(int(orjHeight)))
 		}
 
 		// resize / optimize
-		resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
-		optimize := c.FormValue("optimize") == "true"
+		resize, width, height := service.GetWidthAndHeight(r, service.FormsType)
+		optimize := httpx.FormValue(r, "optimize") == "true"
 
 		switch {
 		case optimize && service.IsImageFile(file.Filename):
@@ -676,10 +682,9 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 				}()
 				fileSize = int64(len(fileContent))
 				if ow > 0 && oh > 0 {
-					c.Set("Width", strconv.Itoa(int(ow)))
-					c.Set("Height", strconv.Itoa(int(oh)))
+					w.Header().Set("Width", strconv.Itoa(int(ow)))
+					w.Header().Set("Height", strconv.Itoa(int(oh)))
 				}
-				c.Set("Content-Length", strconv.Itoa(len(fileContent)))
 				fileBuffer = tempFile
 			}
 		case resize && orjWidth > 0 && orjHeight > 0:
@@ -690,9 +695,8 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 					_ = tempFile.Close()
 				}()
 				fileSize = int64(len(fileContent))
-				c.Set("Width", strconv.Itoa(int(width)))
-				c.Set("Height", strconv.Itoa(int(height)))
-				c.Set("Content-Length", strconv.Itoa(len(fileContent)))
+				w.Header().Set("Width", strconv.Itoa(int(width)))
+				w.Header().Set("Height", strconv.Itoa(int(height)))
 				fileBuffer = tempFile
 			}
 		}
@@ -703,7 +707,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	minioResult := "Minio Successfully Uploaded"
 
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	url := config.GetEnvOrDefault("APP_URL", "http://localhost:9090")
@@ -714,7 +718,7 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	// be rewound before the archive sees it.
 	archiveResult := i.rewindAndArchive(ctx, bucket, objectName, fileBuffer)
 
-	return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
+	return service.Response(w, http.StatusCreated, true, "success", map[string]any{
 		"minioUpload": fmt.Sprintf("Minio Successfully Uploaded size %d", fileSize),
 		"minioResult": minioResult,
 		"awsUpload":   archiveResult,
@@ -725,27 +729,27 @@ func (i image) UploadImage(c *fiber.Ctx) error {
 	})
 }
 
-func (i image) UploadWithUrl(c *fiber.Ctx) error {
+func (i image) UploadWithUrl(w http.ResponseWriter, r *http.Request) error {
 	ctx := context.Background()
 
 	// Parse request body
 	var req UploadUrlRequest
-	if err := c.BodyParser(&req); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid request body", nil)
+	if err := httpx.BindBody(r, &req); err != nil {
+		return service.Response(w, http.StatusBadRequest, false, "Invalid request body", nil)
 	}
 
 	// Validate request
 	if err := validator.ValidateStruct(req); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	// Reconcile the body with the token before anything acts on req.Bucket.
-	bucketName, err := resolveBucket(c, req.Bucket)
+	bucketName, err := resolveBucket(r, req.Bucket)
 	if err != nil {
-		return bucketForbidden(c)
+		return bucketForbidden(w)
 	}
 	if bucketName == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Bucket is required", nil)
 	}
 	req.Bucket = bucketName
 
@@ -753,22 +757,22 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	// metadata targets before any request is made. Ordered before the MinIO
 	// call so it is exercised without a live storage backend.
 	if err := validator.ValidateUploadURL(req.URL); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	// Check to see if the bucket already exists (create when genuinely missing;
 	// BucketExists returns (false, nil) in that case).
 	exists, err := i.minioClient.BucketExists(ctx, req.Bucket)
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "bucket check failed: "+err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, "bucket check failed: "+err.Error(), nil)
 	}
 	if !exists {
 		// See UploadImage: the name rule applies to bucket creation only.
 		if err := bucketname.Validate(req.Bucket); err != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+			return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 		}
 		if err := i.minioClient.MakeBucket(ctx, req.Bucket, minio.MakeBucketOptions{}); err != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
+			return service.Response(w, http.StatusBadRequest, false, "Bucket Not Found And Not Created!", nil)
 		}
 	}
 
@@ -778,7 +782,7 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	httpClient := validator.NewSafeHTTPClient(30 * time.Second)
 	res, err := httpClient.Get(req.URL)
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 	defer res.Body.Close()
 
@@ -786,7 +790,7 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	maxSize := config.GetEnvAsIntOrDefault("MAX_FILE_SIZE", int(validator.DefaultMaxFileSize))
 	content, err := io.ReadAll(io.LimitReader(res.Body, int64(maxSize)))
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Failed to read content from URL", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Failed to read content from URL", nil)
 	}
 
 	// Automatically detect content type
@@ -800,8 +804,8 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		content = optimized
 		contentType = http.DetectContentType(content)
 		if ow > 0 && oh > 0 {
-			c.Set("Width", strconv.Itoa(int(ow)))
-			c.Set("Height", strconv.Itoa(int(oh)))
+			w.Header().Set("Width", strconv.Itoa(int(ow)))
+			w.Header().Set("Height", strconv.Itoa(int(oh)))
 		}
 	}
 
@@ -811,14 +815,14 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 		// Try to extract extension from URL if content type is not recognized
 		extension = filetype.GetExtensionFromURL(req.URL)
 		if !filetype.IsValidExtension(extension) {
-			return service.Response(c, fiber.StatusBadRequest, false, "Unsupported or unrecognized file type", nil)
+			return service.Response(w, http.StatusBadRequest, false, "Unsupported or unrecognized file type", nil)
 		}
 	}
 
 	// If the resolved type is an image, the downloaded bytes must be a valid
 	// image; non-image content uploads unchanged.
 	if _, _, verr := i.validateImageContent("f."+extension, content); verr != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid image content", map[string]string{
+		return service.Response(w, http.StatusBadRequest, false, "invalid image content", map[string]string{
 			"code": "INVALID_IMAGE_CONTENT",
 		})
 	}
@@ -840,7 +844,7 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	// Upload with PutObject
 	minioResult, err := i.minioClient.PutObject(ctx, req.Bucket, objectName, contentReader, int64(len(content)), minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	url := config.GetEnvOrDefault("APP_URL", "http://localhost:9090")
@@ -850,7 +854,7 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 	// Archive. contentReader was drained by the MinIO upload above.
 	archiveResult := i.rewindAndArchive(ctx, req.Bucket, objectName, contentReader)
 
-	return service.Response(c, fiber.StatusCreated, true, "success", map[string]any{
+	return service.Response(w, http.StatusCreated, true, "success", map[string]any{
 		"minioUpload": fmt.Sprintf("Minio Successfully Uploaded size %d", minioResult.Size),
 		"minioResult": minioResult,
 		"awsUpload":   archiveResult,
@@ -862,70 +866,70 @@ func (i image) UploadWithUrl(c *fiber.Ctx) error {
 }
 
 // DeleteImage handles image deletion
-func (i image) DeleteImage(c *fiber.Ctx) error {
+func (i image) DeleteImage(w http.ResponseWriter, r *http.Request) error {
 	ctx := context.Background()
 
 	// This is the one write route with the bucket in the URL path, so a scoped
 	// token deleting from another bucket is refused here.
-	bucket, err := resolveBucket(c, c.Params("bucket"))
+	bucket, err := resolveBucket(r, httpx.Param(r, "bucket"))
 	if err != nil {
-		return bucketForbidden(c)
+		return bucketForbidden(w)
 	}
-	awsDelete := c.Params("aws_delete") == "true"
-	object := c.Params("*")
+	awsDelete := httpx.Param(r, "aws_delete") == "true"
+	object := httpx.Param(r, "*")
 
 	if len(bucket) == 0 || len(object) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid path or bucket or file.", nil)
+		return service.Response(w, http.StatusBadRequest, false, "invalid path or bucket or file.", nil)
 	}
 
 	// Reject traversal-like keys instead of forwarding them verbatim to MinIO.
 	if service.HasUnsafeObjectKey(object) {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid object key", nil)
+		return service.Response(w, http.StatusBadRequest, false, "invalid object key", nil)
 	}
 
 	// Check if the bucket exists on Minio
 	if found, _ := i.minioClient.BucketExists(ctx, bucket); !found {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Minio!", "")
+		return service.Response(w, http.StatusBadRequest, false, "Bucket Not Found On Minio!", "")
 	}
 
 	// Check if the bucket exists on AWS S3 if required
 	if awsDelete && !i.awsService.BucketExists(bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket Not Found On Aws S3!", "")
+		return service.Response(w, http.StatusBadRequest, false, "Bucket Not Found On Aws S3!", "")
 	}
 
 	// Remove object from Minio
 	if err := i.minioClient.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{}); err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), "")
+		return service.Response(w, http.StatusInternalServerError, false, err.Error(), "")
 	}
 
 	// Remove object from AWS S3 if required
 	if awsDelete {
 		if err := i.awsService.DeleteObjects(bucket, []string{object}); err != nil {
-			return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), "")
+			return service.Response(w, http.StatusInternalServerError, false, err.Error(), "")
 		}
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "File Successfully Deleted", "")
+	return service.Response(w, http.StatusOK, true, "File Successfully Deleted", "")
 }
 
 // ResizeImage handles image resizing using worker pool
-func (i *image) ResizeImage(c *fiber.Ctx) error {
-	resize, width, height := service.GetWidthAndHeight(c, service.FormsType)
-	file, err := c.FormFile("file")
+func (i *image) ResizeImage(w http.ResponseWriter, r *http.Request) error {
+	resize, width, height := service.GetWidthAndHeight(r, service.FormsType)
+	file, err := httpx.FormFile(r, "file")
 
 	if file == nil || err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "File Not Found!", nil)
+		return service.Response(w, http.StatusBadRequest, false, "File Not Found!", nil)
 	}
 
 	fileBuffer, err := file.Open()
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 	defer fileBuffer.Close()
 
 	fileContent, err := io.ReadAll(fileBuffer)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "Error reading file content", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "Error reading file content", nil)
 	}
 
 	// Magic-number gate before the bytes reach ImageMagick, matching the upload
@@ -933,11 +937,11 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 	// file with a dangerous ImageMagick coder/delegate) with no content check.
 	if err := validator.ValidateFileContent(fileContent); err != nil {
 		if valErr, ok := err.(*validator.FileValidationError); ok {
-			return service.Response(c, fiber.StatusBadRequest, false, valErr.Message, map[string]string{
+			return service.Response(w, http.StatusBadRequest, false, valErr.Message, map[string]string{
 				"code": valErr.Code,
 			})
 		}
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	if !resize || !service.IsImageFile(file.Filename) {
@@ -945,9 +949,8 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 		// markup uploaded here would otherwise come out as text/html on this
 		// origin. Harder to abuse than the stored case, since it needs an
 		// authenticated multipart POST, but it is the identical mistake.
-		c.Set("Content-Length", strconv.Itoa(len(fileContent)))
-		c.Set("Content-Type", inertContentType(http.DetectContentType(fileContent)))
-		return c.Send(fileContent)
+		httpx.Bytes(w, http.StatusOK, inertContentType(http.DetectContentType(fileContent)), fileContent)
+		return nil
 	}
 
 	// Create response channel
@@ -972,24 +975,23 @@ func (i *image) ResizeImage(c *fiber.Ctx) error {
 	}
 
 	if err := i.workerPool.Submit(job); err != nil {
-		return service.Response(c, fiber.StatusServiceUnavailable, false, "Image processing queue is full", nil)
+		return service.Response(w, http.StatusServiceUnavailable, false, "Image processing queue is full", nil)
 	}
 
 	// Wait for response
 	if err := <-respChan; err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "Image processing failed", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "Image processing failed", nil)
 	}
 
 	if len(req.Result) == 0 {
-		return service.Response(c, fiber.StatusInternalServerError, false, "Image processing produced no output", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "Image processing produced no output", nil)
 	}
 
 	// Answer with the image, which is what a caller posting a file and a target
 	// size is asking for. This endpoint used to return a JSON success and no
 	// bytes, so the work was done and thrown away.
-	c.Set("Content-Length", strconv.Itoa(len(req.Result)))
-	c.Set("Content-Type", inertContentType(http.DetectContentType(req.Result)))
-	return c.Send(req.Result)
+	httpx.Bytes(w, http.StatusOK, inertContentType(http.DetectContentType(req.Result)), req.Result)
+	return nil
 }
 
 // processBatch handles batch processing of items
@@ -1037,22 +1039,22 @@ func processImage(req *ImageProcessRequest, i *image) error {
 }
 
 // BatchUpload handles multiple file uploads
-func (i *image) BatchUpload(c *fiber.Ctx) error {
-	form, err := c.MultipartForm()
+func (i *image) BatchUpload(w http.ResponseWriter, r *http.Request) error {
+	form, err := httpx.MultipartForm(r)
 	if err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid form data", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Invalid form data", nil)
 	}
 
 	requestedBucket := ""
 	if v := form.Value["bucket"]; len(v) > 0 {
 		requestedBucket = v[0]
 	}
-	bucketName, err := resolveBucket(c, requestedBucket)
+	bucketName, err := resolveBucket(r, requestedBucket)
 	if err != nil {
-		return bucketForbidden(c)
+		return bucketForbidden(w)
 	}
 	if bucketName == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Bucket is required", nil)
 	}
 
 	path := form.Value["path"]
@@ -1066,21 +1068,21 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 	// Check bucket existence
 	exists, err := i.minioClient.BucketExists(context.Background(), bucketName)
 	if err != nil || !exists {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket not found", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Bucket not found", nil)
 	}
 
 	// See UploadImage on why the archive bucket is no longer a precondition.
 
 	files := form.File["files"]
 	if len(files) == 0 {
-		return service.Response(c, fiber.StatusBadRequest, false, "No files provided", nil)
+		return service.Response(w, http.StatusBadRequest, false, "No files provided", nil)
 	}
 
 	// Cap the batch size so a huge multipart request cannot pre-allocate an
 	// unbounded result channel / slice (memory DoS).
 	maxBatch := config.GetEnvAsIntOrDefault("MAX_BATCH_FILES", 100)
 	if maxBatch > 0 && len(files) > maxBatch {
-		return service.Response(c, fiber.StatusBadRequest, false, fmt.Sprintf("Too many files in one batch (max %d)", maxBatch), nil)
+		return service.Response(w, http.StatusBadRequest, false, fmt.Sprintf("Too many files in one batch (max %d)", maxBatch), nil)
 	}
 
 	results := make([]map[string]any, 0)
@@ -1212,27 +1214,27 @@ func (i *image) BatchUpload(c *fiber.Ctx) error {
 		results = append(results, result)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "Batch upload completed", results)
+	return service.Response(w, http.StatusOK, true, "Batch upload completed", results)
 }
 
 // BatchDelete handles multiple file deletions
-func (i *image) BatchDelete(c *fiber.Ctx) error {
+func (i *image) BatchDelete(w http.ResponseWriter, r *http.Request) error {
 	var req BatchDeleteRequest
-	if err := c.BodyParser(&req); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "Invalid request body", nil)
+	if err := httpx.BindBody(r, &req); err != nil {
+		return service.Response(w, http.StatusBadRequest, false, "Invalid request body", nil)
 	}
 
 	if err := validator.ValidateStruct(req); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, err.Error(), nil)
+		return service.Response(w, http.StatusBadRequest, false, err.Error(), nil)
 	}
 
 	// Reconcile the body with the token before anything acts on req.Bucket.
-	bucketName, err := resolveBucket(c, req.Bucket)
+	bucketName, err := resolveBucket(r, req.Bucket)
 	if err != nil {
-		return bucketForbidden(c)
+		return bucketForbidden(w)
 	}
 	if bucketName == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket is required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Bucket is required", nil)
 	}
 	req.Bucket = bucketName
 
@@ -1240,18 +1242,18 @@ func (i *image) BatchDelete(c *fiber.Ctx) error {
 	// result channel / slice (memory DoS).
 	maxBatch := config.GetEnvAsIntOrDefault("MAX_BATCH_FILES", 100)
 	if maxBatch > 0 && len(req.Files) > maxBatch {
-		return service.Response(c, fiber.StatusBadRequest, false, fmt.Sprintf("Too many files in one batch (max %d)", maxBatch), nil)
+		return service.Response(w, http.StatusBadRequest, false, fmt.Sprintf("Too many files in one batch (max %d)", maxBatch), nil)
 	}
 
 	// Check bucket existence
 	exists, err := i.minioClient.BucketExists(context.Background(), req.Bucket)
 	if err != nil || !exists {
-		return service.Response(c, fiber.StatusBadRequest, false, "Bucket not found", nil)
+		return service.Response(w, http.StatusBadRequest, false, "Bucket not found", nil)
 	}
 
 	// Check AWS bucket if needed
 	if req.AWSDelete && !i.awsService.BucketExists(req.Bucket) {
-		return service.Response(c, fiber.StatusBadRequest, false, "AWS bucket not found", nil)
+		return service.Response(w, http.StatusBadRequest, false, "AWS bucket not found", nil)
 	}
 
 	results := make([]map[string]any, 0)
@@ -1300,5 +1302,5 @@ func (i *image) BatchDelete(c *fiber.Ctx) error {
 		results = append(results, result)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "Batch delete completed", results)
+	return service.Response(w, http.StatusOK, true, "Batch delete completed", results)
 }

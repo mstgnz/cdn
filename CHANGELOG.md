@@ -17,6 +17,32 @@ All notable changes to this project will be documented in this file.
   `DISABLE_*` switches, and compares each full response with a golden file in
   `scripts/e2e-golden/`. `make ci` now reports test coverage.
 
+### Changed
+
+- **The HTTP layer runs on net/http and go-chi instead of fiber and fasthttp.**
+  Chosen for net/http's security patching and ecosystem, not for speed: the
+  time goes to ImageMagick and MinIO. Requests and responses are meant to be
+  identical, and the contract probes prove it: every golden file recorded on
+  the fiber build passes unchanged. That covers status lines, bodies and headers,
+  including fiber's quirks, which are kept on purpose: case-insensitive routes
+  and a tolerated trailing slash, route parameters passed on undecoded, `404`
+  as `Cannot GET /path` and `405` with an `Allow` list, the `/aws`, `/minio` and
+  `/ws` prefixes matching without a segment boundary, the rate-limit headers and
+  their shared Redis counter (stored in the same encoding, so a rollback keeps
+  the counts), CORS, the favicon, byte ranges and `If-Modified-Since` on the
+  placeholder, and the 500 body of a recovered panic. Timeouts stay at 60
+  seconds for reading and writing, with a new 5-second limit for request
+  headers. Rate limiting, CORS, recovery and the favicon are ported rather than
+  taken from libraries; `/ws` uses `github.com/coder/websocket`.
+- **Known differences.** `/metrics` label values are now correct: fiber kept
+  label strings that pointed into reused request buffers, so recorded series
+  could change their method or endpoint later (a `DELE /batch/upload` series was
+  seen). The label format is unchanged. Transport-level errors that nginx does
+  not let through (a malformed request line, headers over the limit) are
+  answered by net/http in its own words. A WebSocket handshake that no browser
+  sends, such as `Sec-WebSocket-Version: 13, 8` or a key that is not 16 bytes of
+  base64, now gets `426` where fasthttp accepted it.
+
 ## [1.12.1] - 2026-09-24
 
 ### Fixed

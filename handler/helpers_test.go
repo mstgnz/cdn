@@ -7,8 +7,26 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/go-chi/chi/v5"
+
+	"github.com/mstgnz/cdn/pkg/httpx"
 )
+
+// testRouter mounts routes the way cmd does: raw-path preparation for fiber's
+// parameter semantics and the response writer the handlers expect.
+func testRouter(routes func(r chi.Router)) http.Handler {
+	r := chi.NewRouter()
+	r.Use(httpx.Prepare)
+	routes(r)
+	return httpx.Wrap(0, r)
+}
+
+// serve runs a request through h and returns the response.
+func serve(h http.Handler, req *http.Request) *http.Response {
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec.Result()
+}
 
 // apiResp mirrors the envelope produced by service.Response.
 type apiResp struct {
@@ -16,14 +34,10 @@ type apiResp struct {
 	Message string `json:"message"`
 }
 
-// doReq runs a request with no body through the fiber app (no timeout).
-func doReq(t *testing.T, app *fiber.App, method, target string) *http.Response {
+// doReq runs a request with no body through the handler.
+func doReq(t *testing.T, h http.Handler, method, target string) *http.Response {
 	t.Helper()
-	resp, err := app.Test(httptest.NewRequest(method, target, nil), -1)
-	if err != nil {
-		t.Fatalf("%s %s failed: %v", method, target, err)
-	}
-	return resp
+	return serve(h, httptest.NewRequest(method, target, nil))
 }
 
 // decodeBody parses the JSON envelope from a response.

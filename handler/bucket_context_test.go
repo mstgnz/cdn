@@ -4,39 +4,27 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/mstgnz/cdn/pkg/audit"
 	"github.com/mstgnz/cdn/service"
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 )
 
-// runResolveBucket exercises resolveBucket behind a real fiber request, with or
-// without a principal stored by the auth middleware.
+// runResolveBucket exercises resolveBucket on a real request, with or without a
+// principal stored by the auth middleware.
 func runResolveBucket(t *testing.T, principal *service.Principal, requested string) (string, error) {
 	t.Helper()
 
-	app := fiber.New()
-	var (
-		got    string
-		gotErr error
-	)
-	app.Get("/", func(c *fiber.Ctx) error {
-		if principal != nil {
-			service.StorePrincipal(c, *principal)
-		}
-		got, gotErr = resolveBucket(c, requested)
-		return c.SendString("done")
-	})
-
-	if _, err := app.Test(httptest.NewRequest("GET", "/", nil)); err != nil {
-		t.Fatalf("request failed: %v", err)
+	req := httptest.NewRequest("GET", "/", nil)
+	if principal != nil {
+		req = service.WithPrincipal(req, *principal)
 	}
-	return got, gotErr
+	return resolveBucket(req, requested)
 }
 
 // TestResolveBucketGeneralTokenUnchanged is the backward-compatibility guard:
@@ -141,17 +129,13 @@ func TestResolveBucketEmitsAuditEventOnDenial(t *testing.T) {
 // TestBucketForbiddenResponse pins the status and makes sure the body names no
 // bucket, so a scoped token cannot be used to probe which buckets exist.
 func TestBucketForbiddenResponse(t *testing.T) {
-	app := fiber.New()
-	app.Get("/", func(c *fiber.Ctx) error {
-		return bucketForbidden(c)
-	})
-
-	res, err := app.Test(httptest.NewRequest("GET", "/", nil))
-	if err != nil {
-		t.Fatalf("request failed: %v", err)
+	rec := httptest.NewRecorder()
+	if err := bucketForbidden(rec); err != nil {
+		t.Fatalf("bucketForbidden: %v", err)
 	}
-	if res.StatusCode != fiber.StatusForbidden {
-		t.Fatalf("status = %d, want %d", res.StatusCode, fiber.StatusForbidden)
+	res := rec.Result()
+	if res.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", res.StatusCode, http.StatusForbidden)
 	}
 
 	raw, err := io.ReadAll(res.Body)

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/mstgnz/cdn/pkg/config"
 )
 
@@ -39,26 +38,14 @@ func loadTestTokens(t *testing.T) {
 	})
 }
 
-// resolve runs ResolvePrincipal behind a real fiber request.
+// resolve runs ResolvePrincipal on a request carrying authHeader.
 func resolve(t *testing.T, authHeader string) (Principal, error) {
 	t.Helper()
-	app := fiber.New()
-	var (
-		principal  Principal
-		resolveErr error
-	)
-	app.Get("/", func(c *fiber.Ctx) error {
-		principal, resolveErr = ResolvePrincipal(c)
-		return c.SendString("done")
-	})
 	req := httptest.NewRequest("GET", "/", nil)
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
 	}
-	if _, err := app.Test(req); err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	return principal, resolveErr
+	return ResolvePrincipal(req)
 }
 
 func TestResolvePrincipalGeneralToken(t *testing.T) {
@@ -193,28 +180,10 @@ func TestResolvePrincipalErrorsDoNotLeakSecrets(t *testing.T) {
 	}
 }
 
-func TestPrincipalLocalsRoundTrip(t *testing.T) {
-	app := fiber.New()
-	var (
-		fromEmpty  Principal
-		fromStored Principal
-	)
-	app.Get("/empty", func(c *fiber.Ctx) error {
-		fromEmpty = PrincipalFrom(c)
-		return c.SendString("done")
-	})
-	app.Get("/stored", func(c *fiber.Ctx) error {
-		StorePrincipal(c, Principal{Scoped: true, Bucket: "tedarik"})
-		fromStored = PrincipalFrom(c)
-		return c.SendString("done")
-	})
-
-	if _, err := app.Test(httptest.NewRequest("GET", "/empty", nil)); err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
-	if _, err := app.Test(httptest.NewRequest("GET", "/stored", nil)); err != nil {
-		t.Fatalf("request failed: %v", err)
-	}
+func TestPrincipalContextRoundTrip(t *testing.T) {
+	fromEmpty := PrincipalFrom(httptest.NewRequest("GET", "/empty", nil))
+	stored := WithPrincipal(httptest.NewRequest("GET", "/stored", nil), Principal{Scoped: true, Bucket: "tedarik"})
+	fromStored := PrincipalFrom(stored)
 
 	// A route wired without the bucket middleware must look like the unrestricted
 	// general token rather than a scoped principal for an empty bucket.

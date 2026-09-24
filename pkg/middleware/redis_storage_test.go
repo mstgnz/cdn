@@ -26,10 +26,9 @@ func (s stubCache) GetResizedImage(string, string, uint, uint) ([]byte, error) {
 }
 func (s stubCache) SetResizedImage(string, string, uint, uint, []byte) error { return nil }
 
-// fiber's Storage contract says a missing key is (nil, nil), not an error. This
-// adapter backs the rate limiter, where the first request from any client IP is
-// a miss by definition, so getting this wrong meant both a contract violation
-// and an ERROR log line per rate-limited request.
+// A missing key is (nil, nil), not an error. This adapter backs the rate
+// limiter, where the first request from any client IP is a miss by definition,
+// so getting this wrong meant an ERROR log line per rate-limited request.
 func TestRedisStorageReportsMissAsEmptyNotError(t *testing.T) {
 	s := &RedisStorage{cache: stubCache{err: fmt.Errorf("%w: some-key", service.ErrCacheMiss)}}
 

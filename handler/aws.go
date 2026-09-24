@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,8 +11,8 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/mstgnz/cdn/pkg/httpx"
 	"github.com/mstgnz/cdn/pkg/worker"
 	"github.com/mstgnz/cdn/service"
 )
@@ -35,18 +36,18 @@ func resolveLocalDownloadPath(base, target string) (string, error) {
 }
 
 type AwsHandler interface {
-	GlacierVaultList(c *fiber.Ctx) error
-	BucketList(c *fiber.Ctx) error
-	BucketExists(c *fiber.Ctx) error
+	GlacierVaultList(w http.ResponseWriter, r *http.Request) error
+	BucketList(w http.ResponseWriter, r *http.Request) error
+	BucketExists(w http.ResponseWriter, r *http.Request) error
 	// New glacier methods
-	GlacierInitiateRetrieval(c *fiber.Ctx) error
-	GlacierListJobs(c *fiber.Ctx) error
-	GlacierDownloadArchive(c *fiber.Ctx) error
-	GlacierJobStatus(c *fiber.Ctx) error
-	GlacierInventoryRetrieval(c *fiber.Ctx) error
+	GlacierInitiateRetrieval(w http.ResponseWriter, r *http.Request) error
+	GlacierListJobs(w http.ResponseWriter, r *http.Request) error
+	GlacierDownloadArchive(w http.ResponseWriter, r *http.Request) error
+	GlacierJobStatus(w http.ResponseWriter, r *http.Request) error
+	GlacierInventoryRetrieval(w http.ResponseWriter, r *http.Request) error
 	// New async download methods
-	GlacierInitiateAsyncDownload(c *fiber.Ctx) error
-	GlacierCheckDownloadStatus(c *fiber.Ctx) error
+	GlacierInitiateAsyncDownload(w http.ResponseWriter, r *http.Request) error
+	GlacierCheckDownloadStatus(w http.ResponseWriter, r *http.Request) error
 }
 
 type awsHandler struct {
@@ -84,46 +85,49 @@ func NewAwsHandler(awsService service.AwsService) AwsHandler {
 	}
 }
 
-func (a *awsHandler) BucketExists(c *fiber.Ctx) error {
-	bucketName := c.Params("bucket")
+func (a *awsHandler) BucketExists(w http.ResponseWriter, r *http.Request) error {
+	bucketName := httpx.Param(r, "bucket")
 	exists := a.awsService.BucketExists(bucketName)
 	if !exists {
-		return service.Response(c, fiber.StatusNotFound, false, "bucket not found", nil)
+		return service.Response(w, http.StatusNotFound, false, "bucket not found", nil)
 	}
-	return service.Response(c, fiber.StatusOK, true, "bucket exists", nil)
+	return service.Response(w, http.StatusOK, true, "bucket exists", nil)
 }
 
-func (a *awsHandler) BucketList(c *fiber.Ctx) error {
+func (a *awsHandler) BucketList(w http.ResponseWriter, r *http.Request) error {
 	buckets, err := a.awsService.ListBuckets()
 	if err != nil {
-		return service.Response(c, fiber.StatusOK, false, err.Error(), buckets)
+		return service.Response(w, http.StatusOK, false, err.Error(), buckets)
 	}
-	return service.Response(c, fiber.StatusOK, true, "buckets listed", buckets)
+	return service.Response(w, http.StatusOK, true, "buckets listed", buckets)
 }
 
-func (a *awsHandler) GlacierVaultList(c *fiber.Ctx) error {
-	return service.Response(c, fiber.StatusOK, true, "glacier vault list", a.awsService.GlacierVaultList())
+func (a *awsHandler) GlacierVaultList(w http.ResponseWriter, r *http.Request) error {
+	return service.Response(w, http.StatusOK, true, "glacier vault list", a.awsService.GlacierVaultList())
 }
 
 // GlacierInitiateRetrieval starts a retrieval job for an archive
-func (a *awsHandler) GlacierInitiateRetrieval(c *fiber.Ctx) error {
-	vaultName := c.Params("vault")
-	archiveId := c.Params("archiveId")
-	retrievalType := c.Query("type", "Standard") // Standard, Bulk, or Expedited
+func (a *awsHandler) GlacierInitiateRetrieval(w http.ResponseWriter, r *http.Request) error {
+	vaultName := httpx.Param(r, "vault")
+	archiveId := httpx.Param(r, "archiveId")
+	retrievalType := httpx.Query(r, "type") // Standard, Bulk, or Expedited
+	if retrievalType == "" {
+		retrievalType = "Standard"
+	}
 
 	if vaultName == "" || archiveId == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "vault name and archive ID are required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "vault name and archive ID are required", nil)
 	}
 
 	result, err := a.awsService.GlacierInitiateRetrieval(vaultName, archiveId, retrievalType)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
+		return service.Response(w, http.StatusInternalServerError, false, err.Error(), nil)
 	}
 	if result == nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "empty retrieval result", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "empty retrieval result", nil)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "retrieval job initiated", map[string]any{
+	return service.Response(w, http.StatusOK, true, "retrieval job initiated", map[string]any{
 		"jobId":         aws.ToString(result.JobId),
 		"location":      aws.ToString(result.Location),
 		"type":          retrievalType,
@@ -133,41 +137,41 @@ func (a *awsHandler) GlacierInitiateRetrieval(c *fiber.Ctx) error {
 }
 
 // GlacierListJobs lists all jobs for a vault
-func (a *awsHandler) GlacierListJobs(c *fiber.Ctx) error {
-	vaultName := c.Params("vault")
+func (a *awsHandler) GlacierListJobs(w http.ResponseWriter, r *http.Request) error {
+	vaultName := httpx.Param(r, "vault")
 
 	if vaultName == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "vault name is required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "vault name is required", nil)
 	}
 
 	result, err := a.awsService.GlacierListJobs(vaultName)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
+		return service.Response(w, http.StatusInternalServerError, false, err.Error(), nil)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "jobs listed", result.JobList)
+	return service.Response(w, http.StatusOK, true, "jobs listed", result.JobList)
 }
 
 // GlacierDownloadArchive downloads completed archive retrieval (immediate stream)
-func (a *awsHandler) GlacierDownloadArchive(c *fiber.Ctx) error {
-	vaultName := c.Params("vault")
-	jobId := c.Params("jobId")
+func (a *awsHandler) GlacierDownloadArchive(w http.ResponseWriter, r *http.Request) error {
+	vaultName := httpx.Param(r, "vault")
+	jobId := httpx.Param(r, "jobId")
 
 	if vaultName == "" || jobId == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "vault name and job ID are required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "vault name and job ID are required", nil)
 	}
 
 	// First check if job is completed
 	jobStatus, err := a.awsService.GlacierDescribeJob(vaultName, jobId)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
+		return service.Response(w, http.StatusInternalServerError, false, err.Error(), nil)
 	}
 	if jobStatus == nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "empty job status", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "empty job status", nil)
 	}
 
 	if !jobStatus.Completed {
-		return service.Response(c, fiber.StatusAccepted, false, "job not completed yet", map[string]any{
+		return service.Response(w, http.StatusAccepted, false, "job not completed yet", map[string]any{
 			"status":        jobStatus.StatusCode,
 			"statusMessage": aws.ToString(jobStatus.StatusMessage),
 			"completed":     jobStatus.Completed,
@@ -177,41 +181,39 @@ func (a *awsHandler) GlacierDownloadArchive(c *fiber.Ctx) error {
 	// Get the archive data
 	result, err := a.awsService.GlacierGetJobOutput(vaultName, jobId)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
+		return service.Response(w, http.StatusInternalServerError, false, err.Error(), nil)
 	}
 	if result == nil || result.Body == nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "empty job output", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "empty job output", nil)
 	}
 	defer result.Body.Close()
 
-	// Stream the file to client
-	c.Set("Content-Type", "application/octet-stream")
-	c.Set("Content-Disposition", "attachment; filename=archive_"+jobId)
-
-	// Copy the body stream to response
-	_, err = io.Copy(c, result.Body)
+	// Buffered, as fiber's response body was: a read failure can still become an
+	// error response, and the length is known up front.
+	data, err := io.ReadAll(result.Body)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "failed to stream file", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "failed to stream file", nil)
 	}
-
+	w.Header().Set("Content-Disposition", "attachment; filename=archive_"+jobId)
+	httpx.Bytes(w, http.StatusOK, "application/octet-stream", data)
 	return nil
 }
 
 // GlacierJobStatus checks the status of a specific job
-func (a *awsHandler) GlacierJobStatus(c *fiber.Ctx) error {
-	vaultName := c.Params("vault")
-	jobId := c.Params("jobId")
+func (a *awsHandler) GlacierJobStatus(w http.ResponseWriter, r *http.Request) error {
+	vaultName := httpx.Param(r, "vault")
+	jobId := httpx.Param(r, "jobId")
 
 	if vaultName == "" || jobId == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "vault name and job ID are required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "vault name and job ID are required", nil)
 	}
 
 	result, err := a.awsService.GlacierDescribeJob(vaultName, jobId)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
+		return service.Response(w, http.StatusInternalServerError, false, err.Error(), nil)
 	}
 	if result == nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "empty job status", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "empty job status", nil)
 	}
 
 	status := map[string]any{
@@ -232,26 +234,26 @@ func (a *awsHandler) GlacierJobStatus(c *fiber.Ctx) error {
 		status["archiveSizeInBytes"] = aws.ToInt64(result.ArchiveSizeInBytes)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "job status", status)
+	return service.Response(w, http.StatusOK, true, "job status", status)
 }
 
 // GlacierInventoryRetrieval initiates inventory retrieval for a vault
-func (a *awsHandler) GlacierInventoryRetrieval(c *fiber.Ctx) error {
-	vaultName := c.Params("vault")
+func (a *awsHandler) GlacierInventoryRetrieval(w http.ResponseWriter, r *http.Request) error {
+	vaultName := httpx.Param(r, "vault")
 
 	if vaultName == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "vault name is required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "vault name is required", nil)
 	}
 
 	result, err := a.awsService.GlacierInventoryRetrieval(vaultName)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
+		return service.Response(w, http.StatusInternalServerError, false, err.Error(), nil)
 	}
 	if result == nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "empty inventory result", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "empty inventory result", nil)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "inventory retrieval job initiated", map[string]any{
+	return service.Response(w, http.StatusOK, true, "inventory retrieval job initiated", map[string]any{
 		"jobId":         aws.ToString(result.JobId),
 		"location":      aws.ToString(result.Location),
 		"message":       "Inventory retrieval job started. This will list all archives in the vault.",
@@ -260,9 +262,9 @@ func (a *awsHandler) GlacierInventoryRetrieval(c *fiber.Ctx) error {
 }
 
 // GlacierInitiateAsyncDownload starts an async download job
-func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
-	vaultName := c.Params("vault")
-	jobId := c.Params("jobId")
+func (a *awsHandler) GlacierInitiateAsyncDownload(w http.ResponseWriter, r *http.Request) error {
+	vaultName := httpx.Param(r, "vault")
+	jobId := httpx.Param(r, "jobId")
 
 	// Parse request body
 	var req struct {
@@ -271,22 +273,22 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 		Type         string `json:"type"` // minio, local
 	}
 
-	if err := c.BodyParser(&req); err != nil {
-		return service.Response(c, fiber.StatusBadRequest, false, "invalid request body", nil)
+	if err := httpx.BindBody(r, &req); err != nil {
+		return service.Response(w, http.StatusBadRequest, false, "invalid request body", nil)
 	}
 
 	if vaultName == "" || jobId == "" || req.TargetPath == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "vault name, job ID, and target path are required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "vault name, job ID, and target path are required", nil)
 	}
 
 	// Validate download type
 	if req.Type != "minio" && req.Type != "local" {
-		return service.Response(c, fiber.StatusBadRequest, false, "type must be 'minio' or 'local'", nil)
+		return service.Response(w, http.StatusBadRequest, false, "type must be 'minio' or 'local'", nil)
 	}
 
 	// For MinIO downloads, bucket is required
 	if req.Type == "minio" && req.TargetBucket == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "target bucket is required for MinIO downloads", nil)
+		return service.Response(w, http.StatusBadRequest, false, "target bucket is required for MinIO downloads", nil)
 	}
 
 	// Resolve and validate the local destination up front so a traversal
@@ -295,7 +297,7 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 	if req.Type == "local" {
 		resolved, resolveErr := resolveLocalDownloadPath(glacierDownloadBase, req.TargetPath)
 		if resolveErr != nil {
-			return service.Response(c, fiber.StatusBadRequest, false, resolveErr.Error(), nil)
+			return service.Response(w, http.StatusBadRequest, false, resolveErr.Error(), nil)
 		}
 		localPath = resolved
 	}
@@ -303,14 +305,14 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 	// Check if Glacier job is completed first
 	jobStatus, err := a.awsService.GlacierDescribeJob(vaultName, jobId)
 	if err != nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, err.Error(), nil)
+		return service.Response(w, http.StatusInternalServerError, false, err.Error(), nil)
 	}
 	if jobStatus == nil {
-		return service.Response(c, fiber.StatusInternalServerError, false, "empty job status", nil)
+		return service.Response(w, http.StatusInternalServerError, false, "empty job status", nil)
 	}
 
 	if !jobStatus.Completed {
-		return service.Response(c, fiber.StatusBadRequest, false, "glacier retrieval job not completed yet", map[string]any{
+		return service.Response(w, http.StatusBadRequest, false, "glacier retrieval job not completed yet", map[string]any{
 			"status":    jobStatus.StatusCode,
 			"completed": jobStatus.Completed,
 		})
@@ -384,10 +386,10 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 
 	// Submit to worker pool
 	if err := a.workerPool.Submit(workerJob); err != nil {
-		return service.Response(c, fiber.StatusServiceUnavailable, false, "download queue is full", nil)
+		return service.Response(w, http.StatusServiceUnavailable, false, "download queue is full", nil)
 	}
 
-	return service.Response(c, fiber.StatusAccepted, true, "async download job started", map[string]any{
+	return service.Response(w, http.StatusAccepted, true, "async download job started", map[string]any{
 		"downloadJobId": downloadJobID,
 		"status":        "pending",
 		"message":       "Download job has been queued. Use the download job ID to check status.",
@@ -395,11 +397,11 @@ func (a *awsHandler) GlacierInitiateAsyncDownload(c *fiber.Ctx) error {
 }
 
 // GlacierCheckDownloadStatus checks the status of an async download job
-func (a *awsHandler) GlacierCheckDownloadStatus(c *fiber.Ctx) error {
-	downloadJobID := c.Params("downloadJobId")
+func (a *awsHandler) GlacierCheckDownloadStatus(w http.ResponseWriter, r *http.Request) error {
+	downloadJobID := httpx.Param(r, "downloadJobId")
 
 	if downloadJobID == "" {
-		return service.Response(c, fiber.StatusBadRequest, false, "download job ID is required", nil)
+		return service.Response(w, http.StatusBadRequest, false, "download job ID is required", nil)
 	}
 
 	// Copy the job under the lock so the response serialization does not race
@@ -412,10 +414,10 @@ func (a *awsHandler) GlacierCheckDownloadStatus(c *fiber.Ctx) error {
 	}
 	a.jobsMu.RUnlock()
 	if !exists {
-		return service.Response(c, fiber.StatusNotFound, false, "download job not found", nil)
+		return service.Response(w, http.StatusNotFound, false, "download job not found", nil)
 	}
 
-	return service.Response(c, fiber.StatusOK, true, "download job status", snapshot)
+	return service.Response(w, http.StatusOK, true, "download job status", snapshot)
 }
 
 // Helper function to estimate completion time based on retrieval type

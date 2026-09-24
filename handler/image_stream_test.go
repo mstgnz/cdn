@@ -15,7 +15,7 @@ type fakeCloser struct {
 func (f *fakeCloser) Read(p []byte) (int, error) { return f.data.Read(p) }
 func (f *fakeCloser) Close() error               { f.closed = true; return nil }
 
-// streamCloser must satisfy io.ReadCloser so fasthttp closes it after writing
+// streamCloser must satisfy io.ReadCloser so SendStream closes it after writing
 // the response (which is what releases the MinIO object).
 var _ io.ReadCloser = streamCloser{}
 
