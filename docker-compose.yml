@@ -26,12 +26,13 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    # The repository is deliberately not mounted: nothing reads it, and it holds
+    # .env, hostwatch.env and tokens.json, all of which a compromised replica
+    # could otherwise read or rewrite.
     volumes:
-      - ./:/cdn
-      # Bucket-scoped tokens are read at boot from the working directory (/app),
-      # so the file has to be mounted there rather than under the /cdn mount
-      # above. Read-only: the service never writes it. Absent file is fine, the
-      # general TOKEN then remains the only credential.
+      # Bucket-scoped tokens are read at boot from the working directory (/app).
+      # Read-only: the service never writes it. Absent file is fine, the general
+      # TOKEN then remains the only credential.
       - ./config:/app/config:ro
     depends_on:
       - minio
@@ -133,6 +134,46 @@ services:
     command: redis-server --appendonly yes
     networks:
       - cdn
+
+  # Mails the operator when the host's disk, inode or memory usage crosses a
+  # threshold. A separate container so it keeps reporting while the API is down,
+  # and a single one so each alert arrives once. Opt-in:
+  #
+  #   COMPOSE_PROFILES=hostwatch       in .env
+  #   HOSTWATCH_* settings             in hostwatch.env, see hostwatch.env.example
+  #
+  # Its own env file keeps the SMTP password out of the API replicas'
+  # environment. See docs/deployment.md, "Host monitoring".
+  hostwatch:
+    build:
+      context: .
+      dockerfile: docker/hostwatch.dockerfile
+    container_name: cdn-hostwatch
+    profiles: ["hostwatch"]
+    restart: always
+    env_file:
+      - hostwatch.env
+    environment:
+      # Read the host's /proc and statfs the host's mounts, not the container's.
+      # HOST_PROC_MOUNTINFO also stops gopsutil falling back to /proc/self, which
+      # would silently report the container's own filesystems.
+      HOST_PROC: /host/proc
+      HOST_PROC_MOUNTINFO: /host/proc/1/mountinfo
+      HOSTWATCH_ROOTFS: /host/root
+    volumes:
+      - /proc:/host/proc:ro
+      - /:/host/root:ro,rslave
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   cdn:

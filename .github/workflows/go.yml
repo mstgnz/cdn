@@ -56,6 +56,15 @@ jobs:
           tags: cdn:ci
           cache-from: type=gha
 
+      # hostwatch has its own image; its tests already ran in the step above.
+      - name: Build hostwatch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/hostwatch.dockerfile
+          load: true
+          tags: cdn-hostwatch:ci
+
       # Losing docker/policy.xml or MAGICK_CONFIGURE_PATH in the runtime stage
       # would disable the ImageMagick hardening silently, so assert it is live in
       # the image that ships rather than trusting the dockerfile to be right.

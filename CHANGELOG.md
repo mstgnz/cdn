@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`hostwatch`, an opt-in container that mails when the host runs out of room.**
+  In September 2026 the production disk filled up and the VM stopped accepting
+  SSH logins, with nothing having warned beforehand. `hostwatch` measures disk,
+  inode and memory usage on the host every minute and mails at 80% and 90%, with
+  reminders while a level holds and a notice when it clears. It runs as its own
+  small image (`docker/hostwatch.dockerfile`, no ImageMagick) and container, so
+  it keeps reporting while the API is down and reports once instead of once per
+  replica. It is behind the `hostwatch` compose profile, so existing deployments
+  are unaffected until they set `COMPOSE_PROFILES=hostwatch`. Its settings,
+  including the SMTP password, live in a separate `hostwatch.env` that the API
+  replicas never load. An optional heartbeat to an external push monitor
+  catches hostwatch itself going quiet. See `docs/deployment.md`, "Host
+  monitoring".
+
+### Security
+
+- **The API replicas no longer mount the repository.** `docker-compose.yml`
+  bind-mounted the whole working directory into every replica at `/cdn`,
+  writable, since the first compose file in January 2024. Nothing reads that
+  path, and it exposed `.env`, `config/tokens.json` and the compose and nginx
+  configuration to any code execution in a replica, which is the process that
+  decodes untrusted images. The mount is gone; `./config` is still mounted
+  read-only at `/app/config` for the token file. Deploying this recreates the
+  api containers, so follow it with `docker restart cdn-nginx`.
+
 ## [1.11.1] - 2026-08-04
 
 ### Fixed

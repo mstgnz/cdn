@@ -236,6 +236,89 @@ Bearer token, so configure your Prometheus scrape job with
 Prometheus/Grafana Compose stack; point your existing monitoring at the metrics
 endpoint.
 
+## Host monitoring
+
+`hostwatch` is an optional container that mails when the host's disk, inode or
+memory usage crosses a threshold. It exists because a full disk is otherwise
+discovered when SSH stops accepting logins. It runs apart from the API, so an
+API crash or OOM loop does not silence it, and as a single container, so each
+alert arrives once rather than once per replica.
+
+**What it measures**, once a minute:
+
+- disk usage of every real filesystem, as `df` reports it
+- inode usage of the same filesystems; with millions of MinIO objects, each a
+  directory, inodes can run out while `df -h` still shows free space
+- memory, as `(MemTotal - MemAvailable) / MemTotal`
+
+Snap `squashfs` loops are always 100% full and are excluded by default, as are
+tmpfs and overlay mounts. A device mounted twice is reported once.
+
+**When it mails.** Warning at 80%, critical at 90%, both configurable. A mail goes
+out when a level is raised, escalated, lowered or cleared, and a reminder every
+6 hours while one stays active. A value has to fall 3 points below a threshold
+before it counts as cleared, so a disk hovering at 90% does not alternate
+between critical and resolved. Memory must stay high for 5 minutes before it
+alerts, since image processing spikes it briefly. Everything due in one minute
+goes out as one mail. A mail that fails to send is retried the next minute.
+
+On start it sends a mail with the thresholds and every reading it took, which
+proves delivery works and lists the mounts it sees. If collection or that mail
+fails, the container exits and `restart: always` retries it, so a broken setup
+shows up as a restart loop in `docker compose ps` rather than as silence.
+
+**Enabling it.** Before the first start, check that the host's root mount is
+shared, which hostwatch's `rslave` bind requires. systemd hosts are shared by
+default:
+
+```bash
+findmnt -o TARGET,PROPAGATION /     # must print "shared"
+```
+
+Then turn the profile on in `.env`:
+
+```bash
+COMPOSE_PROFILES=hostwatch
+```
+
+and put the settings in their own file, `hostwatch.env`, next to `.env`
+(`cp hostwatch.env.example hostwatch.env`). They are kept out of `.env` because
+the API replicas load `.env` into their environment, and the SMTP password has
+no business there. `hostwatch.env` is ignored by git and by the image build;
+with the profile on, compose refuses to start if it is missing.
+
+```bash
+HOSTWATCH_SMTP_HOST=smtp.example.com
+HOSTWATCH_SMTP_PORT=587
+HOSTWATCH_SMTP_USERNAME=alerts@example.com
+HOSTWATCH_SMTP_PASSWORD=...
+HOSTWATCH_SMTP_FROM=CDN Alerts <alerts@example.com>
+HOSTWATCH_SMTP_TO=ops@example.com, oncall@example.com
+```
+
+and deploy as usual; `COMPOSE_PROFILES` makes compose build and start it with the
+rest of the stack:
+
+```bash
+docker compose up -d --build
+docker compose logs hostwatch      # "startup mail sent", then "monitoring"
+```
+
+Port 587 uses STARTTLS and 465 implicit TLS. There is no plaintext mode, and a
+server that does not offer STARTTLS is refused before any credential is sent.
+
+**Watching the watcher.** If hostwatch itself stops, nothing mails, and silence
+looks like health. Set `HOSTWATCH_HEARTBEAT_URL` to an Uptime Kuma push monitor
+running on another machine, with a heartbeat interval of 60 seconds and a retry
+count of 2 or 3. hostwatch calls it every minute with `status=up`, or
+`status=down` and a reason when it cannot read a metric or deliver mail, so the
+external monitor catches both a dead container and a broken mail path.
+
+**Isolation.** The container reads the host's `/proc` and `/` read-only, runs
+with every capability dropped, a read-only root filesystem and
+`no-new-privileges`, is capped at 64 MB, and is not attached to the `cdn`
+network: it can reach nothing of the stack's.
+
 ## Production Deployment
 
 ### Kubernetes

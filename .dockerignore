@@ -2,6 +2,8 @@
 # the image layers.
 .env
 .env.*
+hostwatch.env
+hostwatch.env.*
 
 # Bucket-scoped token file: mounted read-only at runtime (see docker-compose.yml),
 # never baked into an image layer. The dockerfile does a blanket `COPY . .`, so

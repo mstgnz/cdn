@@ -9,6 +9,9 @@ tmp
 .env
 .env.*
 !.env.example
+hostwatch.env
+hostwatch.env.*
+!hostwatch.env.example
 
 # Bucket-scoped token file. Only config/tokens.template.json is tracked.
 config/tokens.json
