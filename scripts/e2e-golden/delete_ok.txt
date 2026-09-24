@@ -1,0 +1,11 @@
+> DELETE /golden/p/<uuid>.jpg
+> Authorization: Bearer <token>
+< HTTP/1.1 200 OK
+< Content-Length: 64
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":"","message":"File Successfully Deleted","success":true}

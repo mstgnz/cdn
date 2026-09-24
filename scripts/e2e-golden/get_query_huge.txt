@@ -1,0 +1,12 @@
+> GET /golden/p/<uuid>.png?width=99999
+< HTTP/1.1 200 OK
+< Content-Length: 80123
+< Content-Type: image/png
+< Height: 80
+< Width: 120
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+binary png 4096x2730 len=80123

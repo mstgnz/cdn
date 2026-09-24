@@ -1,0 +1,12 @@
+> GET /golden/p/<uuid>.sql
+< HTTP/1.1 200 OK
+< Content-Length: 50
+< Content-Type: text/plain; charset=utf-8
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+-- dump
+INSERT INTO t (c) VALUES ('ğüşiöç');
+

@@ -1,0 +1,13 @@
+> GET /
+> Authorization: Bearer <token>
+< HTTP/1.1 200 OK
+< Accept-Ranges: bytes
+< Content-Length: 348
+< Content-Type: text/html; charset=utf-8
+< Last-Modified: <http-date>
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+public/scalar.html (348 bytes)

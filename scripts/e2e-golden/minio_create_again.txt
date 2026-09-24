@@ -1,0 +1,11 @@
+> GET /minio/golden-empty/create
+> Authorization: Bearer <token>
+< HTTP/1.1 200 OK
+< Content-Length: 134
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":"golden-empty","message":"Your previous request to create the named bucket succeeded and you already own it.","success":false}

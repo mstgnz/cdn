@@ -1,0 +1,10 @@
+> GET /golden/p/<uuid>.pdf?width=30
+< HTTP/1.1 200 OK
+< Content-Length: 77
+< Content-Type: application/pdf
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+fixture doc.pdf (77 bytes)

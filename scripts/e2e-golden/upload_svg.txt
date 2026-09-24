@@ -1,0 +1,13 @@
+> POST /upload
+> Authorization: Bearer <token>
+> Content-Type: multipart/form-data; boundary=cdne2eBoundary7MA4YWxkTrZu0gW
+> body: multipart bucket=golden,path=p file=icon.svg(135 bytes)
+< HTTP/1.1 201 Created
+< Content-Length: 367
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":{"awsResult":"","awsUpload":"","imageName":"<uuid>.svg","link":"<app>/golden/p/<uuid>.svg","minioResult":"Minio Successfully Uploaded","minioUpload":"Minio Successfully Uploaded size 135","objectName":"p/<uuid>.svg"},"message":"success","success":true}

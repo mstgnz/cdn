@@ -1,0 +1,13 @@
+> POST /upload
+> Authorization: Bearer <token>
+> Content-Type: multipart/form-data; boundary=cdne2eBoundary7MA4YWxkTrZu0gW
+> body: multipart bucket=golden,path=p file=noext(77 bytes)
+< HTTP/1.1 400 Bad Request
+< Content-Length: 275
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":{"code":"INVALID_FILE_FORMAT"},"message":"Invalid file format. Allowed formats: .3gp, .avi, .avif, .bmp, .csv, .doc, .docx, .gif, .heic, .heif, .jpeg, .jpg, .mov, .mp3, .mp4, .pdf, .png, .ppt, .pptx, .sql, .svg, .tiff, .wav, .webp, .xls, .xlsx, .zip","success":false}

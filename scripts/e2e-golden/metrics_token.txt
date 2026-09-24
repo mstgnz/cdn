@@ -1,0 +1,15 @@
+> GET /metrics
+> Authorization: Bearer <token>
+< HTTP/1.1 200 OK
+< Content-Length: <n>
+< Content-Type: text/plain; version=0.0.4; charset=utf-8; escaping=values
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+cdn metric families:
+# HELP cdn_http_request_duration_seconds HTTP request duration in seconds
+# HELP cdn_http_requests_total Total number of HTTP requests
+# TYPE cdn_http_request_duration_seconds histogram
+# TYPE cdn_http_requests_total counter

@@ -1,0 +1,14 @@
+> GET /ws?token=wrong
+> Connection: Upgrade
+> Upgrade: websocket
+> Sec-WebSocket-Version: 13
+> Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+< HTTP/1.1 401 Unauthorized
+< Content-Length: 12
+< Content-Type: text/plain; charset=utf-8
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+Unauthorized

@@ -1,0 +1,2 @@
+redis db 1 (rate-limit container), keys of the probe client only
+198.51.100.77general -> currHits=fixint:6 prevHits=fixint:0 exp=uint32:<unix-seconds> (ttl set)

@@ -1,0 +1,9 @@
+> GET /health
+> CF-Connecting-IP: 198.51.100.77
+> Authorization: Bearer <token>
+< HTTP/1.1 429 Too Many Requests
+< Content-Length: 72
+< Content-Type: application/json
+< Retry-After: <n>
+<
+{"data":{"wait":"1m0s"},"message":"Rate limit exceeded","success":false}

@@ -1,0 +1,10 @@
+> GET /golden/p/<uuid>.HEIC
+< HTTP/1.1 200 OK
+< Content-Length: 1048
+< Content-Type: application/octet-stream
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+fixture photo.heic (1048 bytes)

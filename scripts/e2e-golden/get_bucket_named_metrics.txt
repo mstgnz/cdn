@@ -1,0 +1,12 @@
+> GET /metrics/x.png
+< HTTP/1.1 200 OK
+< Accept-Ranges: bytes
+< Content-Length: 3916
+< Content-Type: image/png
+< Last-Modified: <http-date>
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+public/notfound.png (3916 bytes)

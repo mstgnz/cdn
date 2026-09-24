@@ -1,0 +1,13 @@
+> POST /archive
+> Authorization: Bearer <token>
+> Content-Type: application/json
+> body: no bucket
+< HTTP/1.1 400 Bad Request
+< Content-Length: 60
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":null,"message":"Bucket is required","success":false}

@@ -1,0 +1,12 @@
+> GET /golden/p/<uuid>.gif?width=30
+< HTTP/1.1 200 OK
+< Content-Length: 283
+< Content-Type: image/gif
+< Height: 80
+< Width: 120
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+binary gif 30x20 sha256=2e38bf3fff109a348c49a405abee49b48a0f58ff26a11b258058363e85d209da len=283

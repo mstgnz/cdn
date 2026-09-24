@@ -1,0 +1,11 @@
+> GET /golden/p/<uuid>.png
+> If-Modified-Since: Tue, 01 Jan 2030 00:00:00 GMT
+< HTTP/1.1 200 OK
+< Content-Length: 396
+< Content-Type: image/png
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+fixture photo.png (396 bytes)

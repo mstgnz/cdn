@@ -1,0 +1,14 @@
+> POST /upload-url
+> CF-Connecting-IP: 198.51.100.77
+> Authorization: Bearer <token>
+> Content-Type: application/json
+> body: private url
+< HTTP/1.1 400 Bad Request
+< Content-Length: 78
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 5
+< X-Ratelimit-Remaining: 4
+< X-Ratelimit-Reset: <n>
+<
+{"data":null,"message":"url resolves to a disallowed address","success":false}

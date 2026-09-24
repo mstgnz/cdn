@@ -1,0 +1,11 @@
+> HEAD /favicon.ico
+< HTTP/1.1 200 OK
+< Cache-Control: public, max-age=31536000
+< Content-Length: 16066
+< Content-Type: image/x-icon
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+(empty)

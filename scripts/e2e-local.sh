@@ -16,7 +16,7 @@ ok()  { echo "PASS  $*"; pass=$((pass+1)); }
 bad() { echo "FAIL  $*"; fail=$((fail+1)); }
 
 teardown() {
-  docker rm -f $P-api $P-redis $P-minio >/dev/null 2>&1
+  docker rm -f $P-api $P-api-rl $P-api-off $P-redis $P-minio >/dev/null 2>&1
   docker network rm $P >/dev/null 2>&1
 }
 trap 'teardown; rm -rf "$W"' EXIT
@@ -37,14 +37,23 @@ REDIS_URL=redis://$P-redis:6379
 VALIDATE_FILE=true
 RATE_LIMIT=1000
 UPLOAD_RATE_LIMIT=1000
+TOKENS_FILE=/app/e2e-tokens.json
+UPLOAD_URL_ALLOW_PRIVATE=true
 EOF
+# The contract probes need a bucket-scoped token and two more api containers: one
+# with tight limits on its own Redis db, one with every route group disabled.
+SCOPED_SECRET=$(openssl rand -hex 32)
+printf '{"buckets":[{"bucket":"e2escoped","token":"%s"}]}\n' "$SCOPED_SECRET" > "$W/tokens.json"
+sed -e 's/^RATE_LIMIT=.*/RATE_LIMIT=5/' -e 's/^UPLOAD_RATE_LIMIT=.*/UPLOAD_RATE_LIMIT=3/' \
+    -e "s#^REDIS_URL=.*#REDIS_URL=redis://$P-redis:6379/1#" -e '/^UPLOAD_URL_ALLOW_PRIVATE=/d' "$W/test.env" > "$W/rl.env"
+{ cat "$W/test.env"; printf 'DISABLE_GET=true\nDISABLE_UPLOAD=true\nDISABLE_DELETE=true\n'; } > "$W/off.env"
 
 echo "### stack"
 docker network create $P >/dev/null
 docker run -d --name $P-minio --network $P -e MINIO_ROOT_USER=$MU -e MINIO_ROOT_PASSWORD=$MP "$MINIO_IMAGE" server /data >/dev/null
 docker run -d --name $P-redis --network $P redis:7.2-alpine >/dev/null
 sleep 3
-docker run -d --name $P-api --network $P --env-file "$W/test.env" -p 127.0.0.1:$PORT:9090 cdn:ci >/dev/null
+docker run -d --name $P-api --network $P --env-file "$W/test.env" -v "$W/tokens.json":/app/e2e-tokens.json:ro -p 127.0.0.1:$PORT:9090 cdn:ci >/dev/null
 for _ in $(seq 1 40); do
   [ "$(curl -s -o /dev/null -w '%{http_code}' $B/health)" = 200 ] && break; sleep 1
 done
@@ -126,11 +135,27 @@ out=$(curl -s -w '\n%{http_code}' -F "file=@$W/fx/t.png" -F bucket=e2e $B/upload
 [ "$(echo "$out" | tail -1)" = 400 ] && echo "$out" | grep -q 'no token provided' \
   && ok "upload without token refused" || bad "upload without token: $(echo "$out" | tr '\n' ' ')"
 
+echo "### contract probes against scripts/e2e-golden (E2E_RECORD=1 rewrites them)"
+docker run -d --name $P-api-rl --network $P --env-file "$W/rl.env" -v "$W/tokens.json":/app/e2e-tokens.json:ro -p 127.0.0.1:$((PORT+1)):9090 cdn:ci >/dev/null
+docker run -d --name $P-api-off --network $P --env-file "$W/off.env" -v "$W/tokens.json":/app/e2e-tokens.json:ro -p 127.0.0.1:$((PORT+2)):9090 cdn:ci >/dev/null
+# A fresh client IP per poll, so waiting for boot cannot spend the tight limit.
+for i in $(seq 1 40); do
+  a=$(curl -s -o /dev/null -w '%{http_code}' -H "CF-Connecting-IP: 10.9.0.$i" http://127.0.0.1:$((PORT+1))/health)
+  b=$(curl -s -o /dev/null -w '%{http_code}' -H "CF-Connecting-IP: 10.9.1.$i" http://127.0.0.1:$((PORT+2))/health)
+  [ "$a" = 200 ] && [ "$b" = 200 ] && break; sleep 1
+done
+if E2E_PORT=$PORT E2E_RL_PORT=$((PORT+1)) E2E_OFF_PORT=$((PORT+2)) E2E_TOKEN=$TOKEN \
+   E2E_SCOPED="e2escoped:$SCOPED_SECRET" E2E_APP_URL="http://localhost:$PORT" E2E_SELF_URL="http://$P-api:9090" \
+   E2E_REDIS_CONTAINER=$P-redis python3 scripts/e2e-probe.py; then ok "contract probes"
+else bad "contract probes"; fi
+
 echo "### after"
 [ "$(curl -s -o /dev/null -w '%{http_code}' $B/health)" = 200 ] && ok "health still 200" || bad "health not 200"
-if docker logs $P-api 2>&1 | grep -iqE 'panic|segfault|error while loading'; then
-  bad "api log shows a crash"; docker logs $P-api 2>&1 | grep -iE 'panic|segfault|error while loading' | head -5
-else ok "no panic or loader error in the api log"; fi
+for c in $P-api $P-api-rl $P-api-off; do
+  if docker logs $c 2>&1 | grep -iqE 'panic|segfault|error while loading'; then
+    bad "$c log shows a crash"; docker logs $c 2>&1 | grep -iE 'panic|segfault|error while loading' | head -5
+  else ok "no panic or loader error in the $c log"; fi
+done
 
 echo
 echo "e2e: pass=$pass fail=$fail"

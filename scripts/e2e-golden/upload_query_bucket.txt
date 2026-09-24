@@ -1,0 +1,15 @@
+> POST /upload?bucket=golden
+> Authorization: Bearer <token>
+> Content-Type: multipart/form-data; boundary=cdne2eBoundary7MA4YWxkTrZu0gW
+> body: multipart path=q file=photo.png(396 bytes)
+< HTTP/1.1 201 Created
+< Content-Length: 367
+< Content-Type: application/json
+< Height: 80
+< Width: 120
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":{"awsResult":"","awsUpload":"","imageName":"<uuid>.png","link":"<app>/golden/q/<uuid>.png","minioResult":"Minio Successfully Uploaded","minioUpload":"Minio Successfully Uploaded size 396","objectName":"q/<uuid>.png"},"message":"success","success":true}

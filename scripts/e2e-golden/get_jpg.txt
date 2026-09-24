@@ -1,0 +1,10 @@
+> GET /golden/p/<uuid>.jpg
+< HTTP/1.1 200 OK
+< Content-Length: 859
+< Content-Type: image/jpeg
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+fixture photo.jpg (859 bytes)

@@ -1,0 +1,12 @@
+> GET /golden/p/<uuid>.webp?width=30
+< HTTP/1.1 200 OK
+< Content-Length: 166
+< Content-Type: image/webp
+< Height: 80
+< Width: 120
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+binary webp sha256=d4834577a9cf2e0ae04b49284a256960aefe97896e5dff26be9f5d834fb1a01c len=166

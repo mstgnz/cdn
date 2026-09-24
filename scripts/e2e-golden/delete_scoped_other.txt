@@ -1,0 +1,11 @@
+> DELETE /golden/p/<uuid>.jpg
+> Authorization: Bearer e2escoped:<scoped-secret>
+< HTTP/1.1 403 Forbidden
+< Content-Length: 84
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":null,"message":"token is not allowed to access this bucket","success":false}

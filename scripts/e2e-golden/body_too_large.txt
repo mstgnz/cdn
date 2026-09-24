@@ -1,0 +1,10 @@
+> POST /upload
+> Authorization: Bearer <token>
+> Content-Type: multipart/form-data; boundary=cdne2eBoundary7MA4YWxkTrZu0gW
+> body: Content-Length 104857601, no body sent
+< HTTP/1.1 413 Request Entity Too Large
+< Connection: close
+< Content-Length: 24
+< Content-Type: text/plain; charset=utf-8
+<
+Request Entity Too Large

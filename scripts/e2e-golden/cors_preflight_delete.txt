@@ -1,0 +1,15 @@
+> OPTIONS /golden/x.png
+> Origin: https://panel.example.test
+> Access-Control-Request-Method: DELETE
+> Access-Control-Request-Headers: authorization
+< HTTP/1.1 204 No Content
+< Access-Control-Allow-Headers: *
+< Access-Control-Allow-Methods: *
+< Access-Control-Allow-Origin: *
+< Access-Control-Max-Age: 86400
+< Vary: Access-Control-Request-Method, Access-Control-Request-Headers, Origin
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+(empty)

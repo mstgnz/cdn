@@ -1,0 +1,12 @@
+> GET /health
+> CF-Connecting-IP: 198.51.100.77
+> Authorization: Bearer <token>
+< HTTP/1.1 200 OK
+< Content-Length: <n>
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 5
+< X-Ratelimit-Remaining: 0
+< X-Ratelimit-Reset: <n>
+<
+{"data":{"services":{"aws":"unhealthy: operation error S3: ListBuckets, resolve auth scheme: resolve endpoint: endpoint rule error, Invalid region: region was not a valid DNS name.","cache":"healthy","minio":"healthy"},"status":"healthy","timestamp":"<time>"},"message":"Health check","success":true}

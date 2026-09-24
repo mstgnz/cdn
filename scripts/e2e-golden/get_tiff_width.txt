@@ -1,0 +1,12 @@
+> GET /golden/p/<uuid>.tiff?width=30
+< HTTP/1.1 200 OK
+< Content-Length: 3864
+< Content-Type: application/octet-stream
+< Height: 80
+< Width: 120
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+binary tiff sha256=981559ad68e33d979405fd1c6f6b90f44914c1ecb325019fa2663daae5d6a746 len=3864

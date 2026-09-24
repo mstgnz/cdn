@@ -1,0 +1,13 @@
+> POST /upload
+> Authorization: Bearer <token>
+> Content-Type: multipart/form-data; boundary=cdne2eBoundary7MA4YWxkTrZu0gW
+> body: multipart bucket=golden,path=p file=dump.sql(50 bytes)
+< HTTP/1.1 201 Created
+< Content-Length: 366
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":{"awsResult":"","awsUpload":"","imageName":"<uuid>.sql","link":"<app>/golden/p/<uuid>.sql","minioResult":"Minio Successfully Uploaded","minioUpload":"Minio Successfully Uploaded size 50","objectName":"p/<uuid>.sql"},"message":"success","success":true}

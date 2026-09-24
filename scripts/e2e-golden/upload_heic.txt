@@ -1,0 +1,13 @@
+> POST /upload
+> Authorization: Bearer <token>
+> Content-Type: multipart/form-data; boundary=cdne2eBoundary7MA4YWxkTrZu0gW
+> body: multipart bucket=golden,path=p file=IMG_0001.HEIC(1048 bytes)
+< HTTP/1.1 201 Created
+< Content-Length: 371
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":{"awsResult":"","awsUpload":"","imageName":"<uuid>.HEIC","link":"<app>/golden/p/<uuid>.HEIC","minioResult":"Minio Successfully Uploaded","minioUpload":"Minio Successfully Uploaded size 1048","objectName":"p/<uuid>.HEIC"},"message":"success","success":true}

@@ -1,0 +1,11 @@
+> GET /monitor
+> Authorization: Bearer <token>
+< HTTP/1.1 200 OK
+< Content-Length: <n>
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+json shape {"data": {"active_uploads": "number", "cache_hit_rate": "number", "cpu_usage": "number", "disk_usage": "map of mountpoint to number", "errors": [], "memory_usage": "number", "timestamp": "string", "upload_speed": "number"}, "message": "string", "success": "bool"}

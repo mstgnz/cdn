@@ -1,0 +1,12 @@
+> DELETE /batch/delete
+> Authorization: Bearer <token>
+> body: no content type
+< HTTP/1.1 400 Bad Request
+< Content-Length: 62
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":null,"message":"Invalid request body","success":false}

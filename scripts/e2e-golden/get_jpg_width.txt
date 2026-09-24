@@ -1,0 +1,12 @@
+> GET /golden/p/<uuid>.jpg?width=30
+< HTTP/1.1 200 OK
+< Content-Length: 425
+< Content-Type: image/jpeg
+< Height: 80
+< Width: 120
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+binary jpeg 30x20 sha256=a499094568ba36665b824428862ee8e47a4fdc29229ca26d9ef061c4310c1aca len=425

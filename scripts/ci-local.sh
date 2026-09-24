@@ -11,7 +11,11 @@ docker build -q --target build -t cdn:ci-build -f dockerfile . >/dev/null
 docker run --rm --entrypoint go cdn:ci-build version
 
 step "vet + test"
-docker run --rm --entrypoint sh cdn:ci-build -c 'go vet ./... && go test -count=1 ./...'
+# Per-package coverage is printed on each "ok" line; the total closes the step.
+docker run --rm --entrypoint sh cdn:ci-build -c '
+  go vet ./... &&
+  go test -count=1 -coverprofile=/tmp/cover.out ./... &&
+  go tool cover -func=/tmp/cover.out | tail -1'
 
 step "runtime image"
 docker build -q -t cdn:ci -f dockerfile . >/dev/null

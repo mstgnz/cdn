@@ -1,0 +1,11 @@
+> DELETE /golden/x.png
+> Authorization: Bearer <token>
+< HTTP/1.1 404 Not Found
+< Content-Length: 27
+< Content-Type: text/plain; charset=utf-8
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+Cannot DELETE /golden/x.png

@@ -1,0 +1,13 @@
+> POST /upload
+> Authorization: Bearer <token>
+> Content-Type: multipart/form-data; boundary=cdne2eBoundary7MA4YWxkTrZu0gW
+> body: multipart bucket=Bad_Name file=photo.png(396 bytes)
+< HTTP/1.1 400 Bad Request
+< Content-Length: 166
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":null,"message":"invalid bucket name: must be 3-63 characters of lowercase letters, digits or '-', starting and ending with a letter or digit","success":false}

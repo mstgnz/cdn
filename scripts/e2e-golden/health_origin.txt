@@ -1,0 +1,13 @@
+> GET /health
+> Origin: https://panel.example.test
+< HTTP/1.1 200 OK
+< Access-Control-Allow-Origin: *
+< Access-Control-Max-Age: 86400
+< Content-Length: <n>
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":{"services":{"aws":"unhealthy: operation error S3: ListBuckets, resolve auth scheme: resolve endpoint: endpoint rule error, Invalid region: region was not a valid DNS name.","cache":"healthy","minio":"healthy"},"status":"healthy","timestamp":"<time>"},"message":"Health check","success":true}

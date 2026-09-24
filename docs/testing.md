@@ -23,7 +23,7 @@ export CGO_CFLAGS_ALLOW='-Xpreprocessor'
 
 `make ci` replays `.github/workflows/go.yml` in Docker, so it needs no cgo or
 ImageMagick on the host: it builds the toolchain stage, runs `go vet` and
-`go test ./...` inside it, builds the runtime image, checks the ImageMagick
+`go test ./...` inside it with per-package and total coverage, builds the runtime image, checks the ImageMagick
 policy is active and that png, jpeg, webp, gif and tiff decode while PDF stays
 blocked, scans the runtime image for libraries `ldd` cannot resolve, and builds
 the hostwatch image. It then runs `make e2e`.
@@ -35,7 +35,27 @@ make: upload of each accepted image type plus pdf and heic (expecting exactly
 batch upload and batch delete, delete, and the refusals for `.php` and a missing
 token. The script never reads `.env` (the makefile's `include .env` still
 requires the file to exist) and removes its containers on exit. Needs Docker,
-curl, openssl and python3; override the port with `E2E_PORT`.
+curl, openssl and python3; override the port with `E2E_PORT` (it also uses the
+next two ports).
+
+It then runs the contract probes in `scripts/e2e-probe.py`: about 175 requests
+covering every endpoint except the AWS ones (which are probed only up to their
+auth gate), on three api containers (the normal one, one with `RATE_LIMIT=5` and
+`UPLOAD_RATE_LIMIT=3` on its own Redis database, one with every `DISABLE_*`
+switch on). Each response is compared with its file in `scripts/e2e-golden/`:
+the status line, every header except `Date`, and the body. Values that change
+between runs are normalised in the file itself and nowhere else: UUIDs,
+timestamps, `Last-Modified`, rate-limit counters and seconds, the length of a
+response that carries a timestamp, the bytes of PNGs ImageMagick writes (their
+dimensions and length stay), `/monitor` and `/ws` numbers, and the order of
+batch results and of the allowed-formats list. Image fixtures live in
+`scripts/e2e-fixtures/` so an ImageMagick upgrade cannot change them.
+
+The golden files are the HTTP contract, recorded from the running service. A
+change that is meant to alter a response re-records them with
+`E2E_RECORD=1 make e2e` and the diff of `scripts/e2e-golden/` is reviewed like
+code. A change that is not meant to, such as a framework swap, must pass without
+touching them.
 
 Run it before tagging a release. A cached layer can hide a broken `apt` step, as
 it did in September 2026, so the first build after a base image change is the

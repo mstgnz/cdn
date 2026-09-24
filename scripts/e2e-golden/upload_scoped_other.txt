@@ -1,0 +1,13 @@
+> POST /upload
+> Authorization: Bearer e2escoped:<scoped-secret>
+> Content-Type: multipart/form-data; boundary=cdne2eBoundary7MA4YWxkTrZu0gW
+> body: multipart bucket=golden,path=p file=photo.png(396 bytes)
+< HTTP/1.1 403 Forbidden
+< Content-Length: 84
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":null,"message":"token is not allowed to access this bucket","success":false}

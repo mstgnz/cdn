@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
   back, resize, batch upload and delete, and the refusals. The scripts never
   read `.env`, though the makefile's own `include .env` still requires one.
   See `docs/testing.md`.
+- **HTTP contract probes.** `make e2e` also sends about 175 requests covering
+  every non-AWS endpoint, including the refusals, CORS, rate limits and the
+  `DISABLE_*` switches, and compares each full response with a golden file in
+  `scripts/e2e-golden/`. `make ci` now reports test coverage.
 
 ## [1.12.1] - 2026-09-24
 

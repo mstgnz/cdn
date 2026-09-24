@@ -1,0 +1,11 @@
+> GET /golden/p/<uuid>.svg
+< HTTP/1.1 200 OK
+< Content-Length: 135
+< Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox
+< Content-Type: image/svg+xml
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><script>alert(1)</script><rect width="10" height="10" fill="red"/></svg>

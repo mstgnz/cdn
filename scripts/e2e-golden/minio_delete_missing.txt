@@ -1,0 +1,11 @@
+> DELETE /minio/golden-empty/delete
+> Authorization: Bearer <token>
+< HTTP/1.1 200 OK
+< Content-Length: 87
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":"golden-empty","message":"The specified bucket does not exist","success":false}

@@ -1,0 +1,13 @@
+> DELETE /batch/delete
+> Authorization: Bearer <token>
+> Content-Type: application/x-www-form-urlencoded
+> body: form
+< HTTP/1.1 200 OK
+< Content-Length: <n>
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+json (data sorted) {"data": [{"filename": "nope-a.png", "success": true}, {"filename": "nope-b.png", "success": true}], "message": "Batch delete completed", "success": true}

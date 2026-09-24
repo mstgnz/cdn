@@ -1,0 +1,13 @@
+> POST /upload-url
+> Authorization: Bearer <token>
+> Content-Type: application/json
+> body: self png
+< HTTP/1.1 201 Created
+< Content-Length: <n>
+< Content-Type: application/json
+< X-Content-Type-Options: nosniff
+< X-Ratelimit-Limit: 1000
+< X-Ratelimit-Remaining: <n>
+< X-Ratelimit-Reset: <n>
+<
+{"data":{"awsResult":"","awsUpload":"","imageName":"<uuid>.png","link":"<app>/golden/u/<uuid>.png","minioResult":{"Bucket":"golden","Key":"u/<uuid>.png","ETag":"2c456f3ed2ece3dc79b827cd502680dc","Size":396,"LastModified":"<time>","Location":"","VersionID":"","Expiration":"<time>","ExpirationRuleID":"","ChecksumCRC32":"","ChecksumCRC32C":"","ChecksumSHA1":"","ChecksumSHA256":""},"minioUpload":"Minio Successfully Uploaded size 396","objectName":"u/<uuid>.png"},"message":"success","success":true}
