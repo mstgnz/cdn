@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`make ci` and `make e2e`.** `make ci` replays the GitHub workflow in Docker
+  and adds a scan of the runtime image for unresolved libraries; `make e2e` runs
+  the built image against its own MinIO and Redis and exercises upload, read
+  back, resize, batch upload and delete, and the refusals. The scripts never
+  read `.env`, though the makefile's own `include .env` still requires one.
+  See `docs/testing.md`.
+
 ## [1.12.1] - 2026-09-24
 
 ### Fixed

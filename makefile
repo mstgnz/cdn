@@ -1,7 +1,16 @@
 include .env
 
-.PHONY: build up up_build down clean
+.PHONY: build up up_build down clean ci e2e
 .DEFAULT_GOAL:= up
+
+# The GitHub workflow replayed locally, then an end-to-end run of the image it
+# built. The scripts never read .env; both need Docker, e2e also curl and python3.
+ci:
+	sh scripts/ci-local.sh
+	bash scripts/e2e-local.sh
+
+e2e:
+	bash scripts/e2e-local.sh
 
 build:
 	docker-compose build

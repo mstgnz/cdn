@@ -19,6 +19,28 @@ export CGO_ENABLED=1
 export CGO_CFLAGS_ALLOW='-Xpreprocessor'
 ```
 
+## The CI pipeline, locally
+
+`make ci` replays `.github/workflows/go.yml` in Docker, so it needs no cgo or
+ImageMagick on the host: it builds the toolchain stage, runs `go vet` and
+`go test ./...` inside it, builds the runtime image, checks the ImageMagick
+policy is active and that png, jpeg, webp, gif and tiff decode while PDF stays
+blocked, scans the runtime image for libraries `ldd` cannot resolve, and builds
+the hostwatch image. It then runs `make e2e`.
+
+`make e2e` starts the image it built against its own MinIO and Redis, with
+generated credentials and no AWS settings, and exercises the calls consumers
+make: upload of each accepted image type plus pdf and heic (expecting exactly
+201), byte-for-byte read back, resize by path and by query, `POST /resize`,
+batch upload and batch delete, delete, and the refusals for `.php` and a missing
+token. The script never reads `.env` (the makefile's `include .env` still
+requires the file to exist) and removes its containers on exit. Needs Docker,
+curl, openssl and python3; override the port with `E2E_PORT`.
+
+Run it before tagging a release. A cached layer can hide a broken `apt` step, as
+it did in September 2026, so the first build after a base image change is the
+one to trust.
+
 ## Running Tests
 
 ```bash
