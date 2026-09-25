@@ -85,6 +85,10 @@ func (w *Writer) WriteHeader(code int) {
 		w.late = nil
 		w.restartWriteDeadline()
 	}
+	if code == http.StatusSwitchingProtocols {
+		// The connection is about to be hijacked; nothing may answer after this.
+		w.status = code
+	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
@@ -118,5 +122,9 @@ func (w *Writer) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if !ok {
 		return nil, nil, errors.New("httpx: response writer cannot be hijacked")
 	}
-	return h.Hijack()
+	conn, rw, err := h.Hijack()
+	if err == nil && w.status == 0 {
+		w.status = http.StatusSwitchingProtocols
+	}
+	return conn, rw, err
 }

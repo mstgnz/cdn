@@ -12,11 +12,35 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // multipartMemory is how much of a multipart body stays in memory before
 // net/http spills file parts to disk; fasthttp kept everything in memory.
-const multipartMemory = 32 << 20
+// A variable so tests can force the spill.
+var multipartMemory int64 = 32 << 20
+
+// parsedForms collects the multipart forms parsed during one request so
+// Prepare can remove their temp files; it is shared by every request copy.
+type parsedForms struct {
+	mu    sync.Mutex
+	forms []*multipart.Form
+}
+
+func (p *parsedForms) add(f *multipart.Form) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.forms = append(p.forms, f)
+}
+
+func (p *parsedForms) removeAll() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, f := range p.forms {
+		_ = f.RemoveAll()
+	}
+	p.forms = nil
+}
 
 // ErrUnprocessableEntity is what fiber's BodyParser returned for a content
 // type it could not bind.
@@ -34,8 +58,10 @@ func FormValue(r *http.Request, key string) string {
 		return v[0]
 	}
 	if isURLEncoded(r) {
-		if v := postArgs(r)[key]; len(v) > 0 && v[0] != "" {
-			return v[0]
+		if args, err := postArgs(r); err == nil {
+			if v := args[key]; len(v) > 0 && v[0] != "" {
+				return v[0]
+			}
 		}
 	}
 	if form, err := MultipartForm(r); err == nil {
@@ -46,12 +72,15 @@ func FormValue(r *http.Request, key string) string {
 	return ""
 }
 
-// MultipartForm parses the body once; net/http removes spilled files after the
-// handler returns.
+// MultipartForm parses the body once. Parts over multipartMemory spill to temp
+// files, which Prepare removes when the request ends.
 func MultipartForm(r *http.Request) (*multipart.Form, error) {
 	if r.MultipartForm == nil {
 		if err := r.ParseMultipartForm(multipartMemory); err != nil {
 			return nil, err
+		}
+		if forms, ok := r.Context().Value(formsKey).(*parsedForms); ok {
+			forms.add(r.MultipartForm)
 		}
 	}
 	return r.MultipartForm, nil
@@ -84,13 +113,22 @@ func isURLEncoded(r *http.Request) bool {
 // postArgs is fasthttp's PostArgs: an urlencoded body read for any method.
 // net/http's ParseForm skips the body of a DELETE, which is how batch delete
 // arrives. Parsed once and kept in r.PostForm.
-func postArgs(r *http.Request) url.Values {
-	if r.PostForm == nil {
-		body, _ := io.ReadAll(r.Body)
-		values, _ := url.ParseQuery(string(body)) // well-formed pairs survive a bad one
-		r.PostForm = values
+//
+// A body that cannot be read in full (cut short, or over the size cap) is an
+// error: fasthttp never ran the handler on a partial body, so a truncated batch
+// delete must not act on whatever arrived. Later calls see an empty form.
+func postArgs(r *http.Request) (url.Values, error) {
+	if r.PostForm != nil {
+		return r.PostForm, nil
 	}
-	return r.PostForm
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		r.PostForm = url.Values{}
+		return r.PostForm, err
+	}
+	values, _ := url.ParseQuery(string(body)) // well-formed pairs survive a bad one
+	r.PostForm = values
+	return values, nil
 }
 
 // BindBody is fiber's BodyParser: JSON for any "+json"/"json" type, form
@@ -111,7 +149,11 @@ func BindBody(r *http.Request, out any) error {
 		}
 		return json.Unmarshal(body, out)
 	case ctype == "application/x-www-form-urlencoded":
-		return bindForm(out, postArgs(r))
+		args, err := postArgs(r)
+		if err != nil {
+			return err
+		}
+		return bindForm(out, args)
 	case ctype == "multipart/form-data":
 		form, err := MultipartForm(r)
 		if err != nil {

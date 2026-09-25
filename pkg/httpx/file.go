@@ -138,10 +138,15 @@ func parseUint(s string) (int, error) {
 }
 
 // SendStream is fiber's c.SendStream(r, size): a known length, then the stream,
-// closed afterwards.
-func SendStream(w http.ResponseWriter, body io.ReadCloser, size int64) {
+// closed afterwards. A HEAD request closes it unread, as fasthttp's SkipBody
+// did; net/http would discard the bytes, but only after pulling the whole object
+// out of MinIO, or out of S3 on the archive path.
+func SendStream(w http.ResponseWriter, r *http.Request, body io.ReadCloser, size int64) {
 	defer body.Close()
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
 	_, _ = io.Copy(w, body)
 }

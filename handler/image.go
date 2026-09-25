@@ -446,7 +446,7 @@ func (i image) GetImage(w http.ResponseWriter, r *http.Request) error {
 	head = head[:n]
 
 	w.Header().Set("Content-Type", contentTypeFor(head))
-	httpx.SendStream(w, streamCloser{
+	httpx.SendStream(w, r, streamCloser{
 		Reader: io.MultiReader(bytes.NewReader(head), body),
 		closer: body,
 	}, size)

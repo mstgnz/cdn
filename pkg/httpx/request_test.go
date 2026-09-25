@@ -2,11 +2,15 @@ package httpx
 
 import (
 	"bytes"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func multipartRequest(t *testing.T, target string, fields map[string]string) *http.Request {
@@ -130,6 +134,72 @@ func TestBindBodyXMLAndUnknown(t *testing.T) {
 	}
 	if _, err := bind(t, "text/plain", "x"); err != ErrUnprocessableEntity {
 		t.Fatalf("text/plain: err = %v", err)
+	}
+}
+
+// A file part over the memory limit spills to a temp file. net/http removes it
+// only for the request it created itself, and handlers parse on copies, so
+// Prepare has to; otherwise every large upload leaves a file behind.
+func TestMultipartTempFilesRemovedAfterRequest(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	previous := multipartMemory
+	multipartMemory = 1
+	t.Cleanup(func() { multipartMemory = previous })
+
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	fw, err := mw.CreateFormFile("file", "big.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fw.Write(bytes.Repeat([]byte("x"), 64<<10))
+	_ = mw.Close()
+
+	var spilled int
+	r := chi.NewRouter()
+	r.Use(Prepare)
+	r.Post("/upload", func(w http.ResponseWriter, req *http.Request) {
+		req = req.WithContext(req.Context()) // a copy, as the auth middleware makes
+		if _, err := FormFile(req, "file"); err != nil {
+			t.Errorf("FormFile: %v", err)
+		}
+		entries, _ := os.ReadDir(dir)
+		spilled = len(entries)
+	})
+	req := httptest.NewRequest("POST", "/upload", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	r.ServeHTTP(httptest.NewRecorder(), req)
+
+	if spilled == 0 {
+		t.Fatal("the part did not spill to disk; the test proves nothing")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("%d temp file(s) left after the request", len(entries))
+	}
+}
+
+type failingReader struct{ sent bool }
+
+func (f *failingReader) Read(p []byte) (int, error) {
+	if f.sent {
+		return 0, io.ErrUnexpectedEOF
+	}
+	f.sent = true
+	return copy(p, "bucket=b&files=x"), nil
+}
+
+// A body cut short must not be bound as if it were whole: fasthttp never ran a
+// handler on a partial body.
+func TestBindBodyRejectsTruncatedForm(t *testing.T) {
+	req := httptest.NewRequest("DELETE", "/batch/delete", &failingReader{})
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	var out bindTarget
+	if err := BindBody(req, &out); err == nil {
+		t.Fatalf("a truncated body was bound: %+v", out)
+	}
+	if got := FormValue(req, "bucket"); got != "" {
+		t.Fatalf("FormValue after a failed read = %q", got)
 	}
 }
 

@@ -10,17 +10,27 @@ import (
 
 type ctxKey int
 
-const rawPathKey ctxKey = iota
+const (
+	rawPathKey ctxKey = iota
+	formsKey
+)
 
 // Prepare records the raw path and routes chi on fiber's detection path. It has
 // to run inside the chi mux, where the route context already exists.
+//
+// It also removes the temp files of every multipart form parsed below it:
+// net/http only cleans up the form of the request it created, and handlers
+// parse on copies made by WithContext.
 func Prepare(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw := rawPathOf(r)
 		if rctx := chi.RouteContext(r.Context()); rctx != nil {
 			rctx.RoutePath = DetectionPath(raw)
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), rawPathKey, raw)))
+		forms := &parsedForms{}
+		defer forms.removeAll()
+		ctx := context.WithValue(context.WithValue(r.Context(), rawPathKey, raw), formsKey, forms)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 

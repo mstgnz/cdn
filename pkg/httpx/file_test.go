@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -99,6 +100,26 @@ func TestSendFileRangeHead(t *testing.T) {
 	if res.StatusCode != http.StatusPartialContent || res.Header.Get("Content-Length") != "3" ||
 		res.Header.Get("Content-Range") != "bytes 2-4/10" {
 		t.Fatalf("unexpected %d %v", res.StatusCode, res.Header)
+	}
+}
+
+type trackedBody struct {
+	read, closed bool
+}
+
+func (b *trackedBody) Read(p []byte) (int, error) { b.read = true; return 0, io.EOF }
+func (b *trackedBody) Close() error               { b.closed = true; return nil }
+
+// HEAD answers the length without pulling the object: net/http would discard
+// the bytes, but only after reading all of them from MinIO or S3.
+func TestSendStreamHeadDoesNotRead(t *testing.T) {
+	for method, wantRead := range map[string]bool{"HEAD": false, "GET": true} {
+		body := &trackedBody{}
+		rec := httptest.NewRecorder()
+		SendStream(rec, httptest.NewRequest(method, "/", nil), body, 1234)
+		if body.read != wantRead || !body.closed || rec.Header().Get("Content-Length") != "1234" {
+			t.Errorf("%s: read=%v closed=%v length=%q", method, body.read, body.closed, rec.Header().Get("Content-Length"))
+		}
 	}
 }
 

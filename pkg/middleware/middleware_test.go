@@ -89,6 +89,34 @@ func TestRecovererOutsidePanicLogger(t *testing.T) {
 	}
 }
 
+// After 101 the connection belongs to the websocket; a later panic is logged
+// but nothing may be written to it, and the metrics see 101, not 200.
+func TestRecovererLeavesSwitchedConnectionAlone(t *testing.T) {
+	var buf bytes.Buffer
+	previous := zlog.Logger
+	zlog.Logger = zerolog.New(&buf)
+	t.Cleanup(func() { zlog.Logger = previous })
+
+	var status int
+	h := httpx.Wrap(0, Recoverer(PanicLogger(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusSwitchingProtocols)
+		status = httpx.From(w).Status()
+		panic("after upgrade")
+	}))))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/ws", nil))
+
+	if status != http.StatusSwitchingProtocols {
+		t.Fatalf("Status() after 101 = %d", status)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("the recoverer wrote after the switch: %q", rec.Body.String())
+	}
+	if !strings.Contains(buf.String(), "after upgrade") {
+		t.Fatal("the panic was not logged")
+	}
+}
+
 func TestFavicon(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "favicon.png")
 	if err := os.WriteFile(file, []byte("ICON"), 0o600); err != nil {
