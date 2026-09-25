@@ -38,7 +38,7 @@ requires the file to exist) and removes its containers on exit. Needs Docker,
 curl, openssl and python3; override the port with `E2E_PORT` (it also uses the
 next two ports).
 
-It then runs the contract probes in `scripts/e2e-probe.py`: about 175 requests
+It then runs the contract probes in `scripts/e2e-probe.py`: about 190 requests
 covering every endpoint except the AWS ones (which are probed only up to their
 auth gate), on three api containers (the normal one, one with `RATE_LIMIT=5` and
 `UPLOAD_RATE_LIMIT=3` on its own Redis database, one with every `DISABLE_*`
