@@ -65,10 +65,11 @@ services:
     # MinIO upgrades forward across the on-disk format but not backward, so treat
     # a version bump as its own change with its own rollback plan.
     #
-    # Pulled from quay.io because MinIO removed its images from Docker Hub: the
-    # minio/minio name no longer resolves, so a host without it cached could not
-    # recreate this container at all. Changing the name recreates the container.
-    image: quay.io/minio/minio:${MINIO_VERSION:-latest}
+    # MinIO no longer publishes community images: Docker Hub dropped them, and
+    # quay.io has answered anonymous pulls with 401 since late September 2026.
+    # MINIO_IMAGE names whichever copy the host holds (a cached minio/minio, a
+    # `docker load`ed archive, a local build). Changing it recreates the container.
+    image: ${MINIO_IMAGE:-quay.io/minio/minio}:${MINIO_VERSION:-latest}
     container_name: cdn-minio
     restart: always
     # Bound to the loopback interface, not 0.0.0.0.

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **`MINIO_IMAGE` names the MinIO server image repository.** quay.io now answers
+  anonymous pulls of `minio/minio` with 401, so a deployment that still runs a
+  cached `minio/minio` image can point compose at it (`MINIO_IMAGE=minio/minio`)
+  and keep its container instead of failing to recreate it. Blank keeps
+  `quay.io/minio/minio`. `make e2e`, the makefile and the k8s backup job still
+  name quay.io and only work where that image is already cached.
+
 ## [1.13.0] - 2026-09-25
 
 ### Added
